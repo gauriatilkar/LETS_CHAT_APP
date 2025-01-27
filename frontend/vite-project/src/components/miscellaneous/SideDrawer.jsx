@@ -148,7 +148,7 @@ function SideDrawer() {
               color="hsl(224, 58%, 25%)"
             >
               <i className="fas fa-search"></i>
-              <Text d={{ base: "none", md: "flex" }} px={4}>
+              <Text d={{ base: "none", md: "flex" }} px={4} onKeyUp={getdata}>
                 Search User
               </Text>
             </Button>
