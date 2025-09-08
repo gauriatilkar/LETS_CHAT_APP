@@ -9,7 +9,7 @@ const path = require("path");
 const cors = require("cors"); // Importing CORS middleware
 
 dotenv.config();
-await connectDB();
+connectDB();
 const app = express();
 
 // Enable CORS for all origins
