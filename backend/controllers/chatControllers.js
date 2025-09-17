@@ -1,6 +1,7 @@
 const asyncHandler = require("express-async-handler");
 const Chat = require("../models/chatModel");
 const User = require("../models/userModel");
+const Message = require("../models/messageModel"); // Add this import
 
 //@description     Create or fetch One to One Chat
 //@route           POST /api/chat/
@@ -56,18 +57,39 @@ const accessChat = asyncHandler(async (req, res) => {
 //@access          Protected
 const fetchChats = asyncHandler(async (req, res) => {
   try {
-    Chat.find({ users: { $elemMatch: { $eq: req.user._id } } })
+    let results = await Chat.find({
+      users: { $elemMatch: { $eq: req.user._id } },
+    })
       .populate("users", "-password")
       .populate("groupAdmin", "-password")
       .populate("latestMessage")
-      .sort({ updatedAt: -1 })
-      .then(async (results) => {
-        results = await User.populate(results, {
-          path: "latestMessage.sender",
-          select: "name pic email",
-        });
-        res.status(200).send(results);
-      });
+      .sort({ updatedAt: -1 });
+
+    results = await User.populate(results, {
+      path: "latestMessage.sender",
+      select: "name pic email",
+    });
+
+    // Process each chat to handle view-once messages
+    const processedResults = await Promise.all(
+      results.map(async (chat) => {
+        // If latest message is a view-once message, find the last non-view-once message
+        if (chat.latestMessage && chat.latestMessage.isViewOnce) {
+          const lastNonViewOnceMessage = await Message.findOne({
+            chat: chat._id,
+            isViewOnce: { $ne: true }, // Not a view-once message
+          })
+            .populate("sender", "name pic email")
+            .sort({ createdAt: -1 });
+
+          // Update the latestMessage to the last non-view-once message
+          chat.latestMessage = lastNonViewOnceMessage;
+        }
+        return chat;
+      })
+    );
+
+    res.status(200).send(processedResults);
   } catch (error) {
     res.status(400);
     throw new Error(error.message);

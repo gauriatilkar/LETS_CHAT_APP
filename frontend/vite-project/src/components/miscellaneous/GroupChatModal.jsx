@@ -45,6 +45,8 @@ const GroupChatModal = ({ children }) => {
     setSelectedUsers([...selectedUsers, userToAdd]);
   };
 
+    const API_URL = import.meta.env.VITE_BACKEND_URL;
+
   const handleSearch = async (query) => {
     setSearch(query);
     if (!query) {
@@ -58,7 +60,10 @@ const GroupChatModal = ({ children }) => {
           Authorization: `Bearer ${user.token}`,
         },
       };
-      const { data } = await axios.get(`https://deployapi-ub0q.onrender.com/api/user?search=${search}`, config);
+      const { data } = await axios.get(
+        `${API_URL}/api/user?search=${search}`,
+        config
+      );
       console.log(data);
       setLoading(false);
       setSearchResult(data);
@@ -97,7 +102,7 @@ const GroupChatModal = ({ children }) => {
         },
       };
       const { data } = await axios.post(
-        `https://deployapi-ub0q.onrender.com/api/chat/group`,
+        `${API_URL}/api/chat/group`,
         {
           name: groupChatName,
           users: JSON.stringify(selectedUsers.map((u) => u._id)),

@@ -7,6 +7,7 @@ import axios from "axios";
 import { useToast } from "@chakra-ui/react";
 import { useNavigate } from "react-router-dom"; // Correct usage
 import { ChatState } from "../../Context/ChatProvider";
+import { Link } from "react-router-dom";
 
 const Login = () => {
   const [show, setShow] = useState(false);
@@ -20,6 +21,8 @@ const Login = () => {
 
   const handleClick = () => setShow(!show);
 
+    const API_URL = import.meta.env.VITE_BACKEND_URL;
+    
   const submitHandler = async () => {
     setLoading(true);
 
@@ -43,7 +46,7 @@ const Login = () => {
       };
 
       const { data } = await axios.post(
-        "https://deployapi-ub0q.onrender.com/api/user/login", // Update endpoint as required
+        `${API_URL}/api/user/login`, // Update endpoint as required
         { email, password },
         config
       );
@@ -109,7 +112,11 @@ const Login = () => {
       >
         Login
       </Button>
-      
+      <Link to="/forgot-password">
+        <Button variant="link" colorScheme="blue" mt={2}>
+          Forgot Password?
+        </Button>
+      </Link>
     </VStack>
   );
 };

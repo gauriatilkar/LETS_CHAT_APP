@@ -21,6 +21,8 @@ const Signup = () => {
   const [pic, setPic] = useState("");
   const [picLoading, setPicLoading] = useState(false);
 
+    const API_URL = import.meta.env.VITE_BACKEND_URL;
+    
   const submitHandler = async () => {
     setPicLoading(true);
     if (!name || !email || !password || !confirmpassword) {
@@ -52,7 +54,7 @@ const Signup = () => {
         },
       };
       const { data } = await axios.post(
-        "https://deployapi-ub0q.onrender.com/api/user",
+        `${API_URL}/api/user`,
         {
           name,
           email,

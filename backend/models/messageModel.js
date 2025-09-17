@@ -6,6 +6,10 @@ const messageSchema = mongoose.Schema(
     content: { type: String, trim: true },
     chat: { type: mongoose.Schema.Types.ObjectId, ref: "Chat" },
     readBy: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+    // Add view-once related fields
+    isViewOnce: { type: Boolean, default: false },
+    viewedBy: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+    isDeleted: { type: Boolean, default: false },
   },
   { timestamps: true }
 );

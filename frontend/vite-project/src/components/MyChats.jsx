@@ -13,6 +13,8 @@ const MyChats = ({ fetchAgain }) => {
   const { selectedChat, setSelectedChat, user, chats, setChats } = ChatState();
   const toast = useToast();
 
+  const API_URL = import.meta.env.VITE_BACKEND_URL;
+
   const fetchChats = async () => {
     try {
       const config = {
@@ -21,7 +23,7 @@ const MyChats = ({ fetchAgain }) => {
         },
       };
 
-      const { data } = await axios.get("https://deployapi-ub0q.onrender.com/api/chat", config);
+      const { data } = await axios.get(`${API_URL}/api/chat`, config);
       if (Array.isArray(data)) {
         setChats(data);
       } else {
@@ -44,6 +46,40 @@ const MyChats = ({ fetchAgain }) => {
         position: "bottom-left",
       });
     }
+  };
+
+  // Helper function to check if a message should be displayed as latest message
+  const shouldShowLatestMessage = (message) => {
+    if (!message) return false;
+
+    // Don't show view-once messages as latest message
+    if (message.isViewOnce) return false;
+
+    return true;
+  };
+
+  // Helper function to get display text for latest message
+  const getLatestMessageDisplay = (chat) => {
+    if (!chat.latestMessage || !shouldShowLatestMessage(chat.latestMessage)) {
+      return null;
+    }
+
+    const message = chat.latestMessage;
+    const content =
+      message.content.length > 50
+        ? message.content.substring(0, 51) + "..."
+        : message.content;
+
+    return (
+      <Text
+        fontSize="sm"
+        color={selectedChat === chat ? "whiteAlpha.900" : "hsl(224, 58%, 45%)"}
+        noOfLines={1}
+      >
+        <b>{message.sender.name}: </b>
+        {content}
+      </Text>
+    );
   };
 
   useEffect(() => {
@@ -132,9 +168,10 @@ const MyChats = ({ fetchAgain }) => {
                 _hover={{
                   transform: "translateY(-2px)",
                   boxShadow: "md",
-                  bgGradient: selectedChat === chat
-                    ? "linear(to-r, #2c5282, #4299e1)"
-                    : "linear(to-r, hsl(217, 52%, 78%), hsl(224, 58%, 79%))",
+                  bgGradient:
+                    selectedChat === chat
+                      ? "linear(to-r, #2c5282, #4299e1)"
+                      : "linear(to-r, hsl(217, 52%, 78%), hsl(224, 58%, 79%))",
                 }}
                 boxShadow={selectedChat === chat ? "md" : "sm"}
               >
@@ -148,18 +185,8 @@ const MyChats = ({ fetchAgain }) => {
                     ? getSender(loggedUser, chat.users)
                     : chat.chatName}
                 </Text>
-                {chat.latestMessage && (
-                  <Text 
-                    fontSize="sm" 
-                    color={selectedChat === chat ? "whiteAlpha.900" : "hsl(224, 58%, 45%)"}
-                    noOfLines={1}
-                  >
-                    <b>{chat.latestMessage.sender.name}: </b>
-                    {chat.latestMessage.content.length > 50
-                      ? chat.latestMessage.content.substring(0, 51) + "..."
-                      : chat.latestMessage.content}
-                  </Text>
-                )}
+                {/* Only show latest message if it's not a view-once message */}
+                {getLatestMessageDisplay(chat)}
               </Box>
             ))}
           </Stack>

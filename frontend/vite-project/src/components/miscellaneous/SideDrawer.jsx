@@ -53,6 +53,8 @@ function SideDrawer() {
     navigate("/");
   };
 
+    const API_URL = import.meta.env.VITE_BACKEND_URL;
+    
   const handleSearch = async () => {
     if (!search) {
       toast.warning("Please enter something in search", {
@@ -74,7 +76,7 @@ function SideDrawer() {
           Authorization: `Bearer ${user?.token}`,
         },
       };
-      const { data } = await axios.get(`https://deployapi-ub0q.onrender.com/api/user?search=${search}`, config);
+      const { data } = await axios.get(`${API_URL}/api/user?search=${search}`, config);
       setSearchResult(Array.isArray(data) ? data : []);
     } catch (error) {
       setError(error.response?.data?.message || "Failed to load search results");
@@ -101,7 +103,7 @@ function SideDrawer() {
           Authorization: `Bearer ${user?.token}`,
         },
       };
-      const { data } = await axios.post(`https://deployapi-ub0q.onrender.com/api/chat`, { userId }, config);
+      const { data } = await axios.post(`${API_URL}/api/chat`, { userId }, config);
       if (!chats.find((c) => c._id === data._id)) {
         setChats([data, ...chats]);
       }

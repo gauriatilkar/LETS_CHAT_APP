@@ -1,9 +1,18 @@
-import React from 'react';
+import React from "react";
 import { FormControl } from "@chakra-ui/form-control";
 import { Input } from "@chakra-ui/input";
 import { Box, Text } from "@chakra-ui/layout";
 import "./styles.css";
-import { IconButton, Spinner, useToast } from "@chakra-ui/react";
+import {
+  IconButton,
+  Spinner,
+  useToast,
+  Popover,
+  PopoverTrigger,
+  PopoverContent,
+  Button,
+  Badge,
+} from "@chakra-ui/react";
 import { getSender, getSenderFull } from "../config/ChatLogics";
 import { useEffect, useState } from "react";
 import axios from "axios";
@@ -12,11 +21,14 @@ import ProfileModal from "./miscellaneous/ProfileModal";
 import ScrollableChat from "./ScrollableChat";
 import Lottie from "react-lottie";
 import animationData from "../animations/typing.json";
+import EmojiPicker from "emoji-picker-react";
 
 import io from "socket.io-client";
 import UpdateGroupChatModal from "./miscellaneous/UpdateGroupChatModal";
 import { ChatState } from "../Context/ChatProvider";
-const ENDPOINT = "https://deployapi-ub0q.onrender.com/"; // "https://talk-a-tive.herokuapp.com"; -> After deployment
+
+const ENDPOINT = import.meta.env.VITE_BACKEND_URL;
+
 var socket, selectedChatCompare;
 
 const SingleChat = ({ fetchAgain, setFetchAgain }) => {
@@ -26,6 +38,7 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
   const [socketConnected, setSocketConnected] = useState(false);
   const [typing, setTyping] = useState(false);
   const [istyping, setIsTyping] = useState(false);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const toast = useToast();
 
   const defaultOptions = {
@@ -36,8 +49,16 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
       preserveAspectRatio: "xMidYMid slice",
     },
   };
+
   const { selectedChat, setSelectedChat, user, notification, setNotification } =
     ChatState();
+
+  const API_URL = import.meta.env.VITE_BACKEND_URL;
+
+  // Check if message starts with view-once trigger
+  const isViewOnceMessage = (message) => {
+    return message.trim().toLowerCase().startsWith("view_once");
+  };
 
   const fetchMessages = async () => {
     if (!selectedChat) return;
@@ -52,7 +73,7 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
       setLoading(true);
 
       const { data } = await axios.get(
-        `https://deployapi-ub0q.onrender.com/api/message/${selectedChat._id}`,
+        `${API_URL}/api/message/${selectedChat._id}`,
         config
       );
       setMessages(data);
@@ -73,37 +94,10 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
 
   const sendMessage = async (event) => {
     if (event.key === "Enter" && newMessage) {
-      socket.emit("stop typing", selectedChat._id);
-      try {
-        const config = {
-          headers: {
-            "Content-type": "application/json",
-            Authorization: `Bearer ${user.token}`,
-          },
-        };
-        setNewMessage("");
-        const { data } = await axios.post(
-          "/api/message",
-          {
-            content: newMessage,
-            chatId: selectedChat,
-          },
-          config
-        );
-        socket.emit("new message", data);
-        setMessages([...messages, data]);
-      } catch (error) {
-        toast({
-          title: "Error Occured!",
-          description: "Failed to send the Message",
-          status: "error",
-          duration: 5000,
-          isClosable: true,
-          position: "bottom",
-        });
-      }
+      await handleSendMessage();
     }
   };
+
   const handleSendMessage = async () => {
     if (newMessage.trim()) {
       socket.emit("stop typing", selectedChat._id);
@@ -114,21 +108,42 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
             Authorization: `Bearer ${user.token}`,
           },
         };
-        
-        const messageContent = newMessage;
+
+        let messageContent = newMessage.trim();
+        let isViewOnce = false;
+
+        // Check if message starts with view_once
+        if (isViewOnceMessage(messageContent)) {
+          isViewOnce = true;
+          // Remove the view_once prefix from the content
+          messageContent = messageContent.substring(9).trim(); // Remove "view_once" and any spaces
+        }
+
         setNewMessage("");
-        
+
         const { data } = await axios.post(
-          "https://deployapi-ub0q.onrender.com/api/message",
+          `${API_URL}/api/message`,
           {
             content: messageContent,
             chatId: selectedChat,
+            isViewOnce: isViewOnce,
           },
           config
         );
 
         socket.emit("new message", data);
         setMessages([...messages, data]);
+
+        if (isViewOnce) {
+          toast({
+            title: "View Once Message Sent! 🔒",
+            description: "This message can only be viewed once",
+            status: "info",
+            duration: 3000,
+            isClosable: true,
+            position: "bottom",
+          });
+        }
       } catch (error) {
         toast({
           title: "Error Occurred!",
@@ -142,6 +157,72 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
     }
   };
 
+  const handleViewOnceMessage = async (messageId) => {
+    try {
+      const config = {
+        headers: {
+          Authorization: `Bearer ${user.token}`,
+        },
+      };
+
+      const { data } = await axios.get(
+        `${API_URL}/api/message/view-once/${messageId}`,
+        config
+      );
+
+      // Update the message in the local state
+      setMessages((prevMessages) =>
+        prevMessages.map((msg) =>
+          msg._id === messageId
+            ? {
+                ...msg,
+                content: data.content,
+                hasBeenViewed: true,
+                viewedBy: data.viewedBy || [],
+              }
+            : msg
+        )
+      );
+
+      // Emit socket event to update other users
+      socket.emit("message viewed", {
+        messageId,
+        chatId: selectedChat._id,
+        userId: user._id,
+      });
+
+      toast({
+        title: "Message Viewed",
+        description: "This message will disappear shortly",
+        status: "info",
+        duration: 2000,
+        isClosable: true,
+        position: "bottom",
+      });
+
+      // Remove the message after 5 seconds to allow reading time
+      setTimeout(() => {
+        setMessages((prevMessages) =>
+          prevMessages.filter((msg) => msg._id !== messageId)
+        );
+      }, 5000);
+    } catch (error) {
+      toast({
+        title: "Error!",
+        description: error.response?.data?.message || "Failed to view message",
+        status: "error",
+        duration: 3000,
+        isClosable: true,
+        position: "bottom",
+      });
+    }
+  };
+
+  const handleEmojiClick = (emojiObject) => {
+    setNewMessage((prev) => prev + emojiObject.emoji);
+    setShowEmojiPicker(false);
+  };
+
   useEffect(() => {
     socket = io(ENDPOINT);
     socket.emit("setup", user);
@@ -149,20 +230,49 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
     socket.on("typing", () => setIsTyping(true));
     socket.on("stop typing", () => setIsTyping(false));
 
-    // eslint-disable-next-line
-  }, []);
+    // Listen for view-once message events
+    socket.on("message viewed", ({ messageId, userId }) => {
+      if (userId !== user._id) {
+        // Update message state to show it's been viewed
+        setMessages((prevMessages) =>
+          prevMessages.map((msg) =>
+            msg._id === messageId
+              ? {
+                  ...msg,
+                  hasBeenViewed: true,
+                  viewedBy: [...(msg.viewedBy || []), userId],
+                }
+              : msg
+          )
+        );
+
+        // Remove the message after 5 seconds
+        setTimeout(() => {
+          setMessages((prevMessages) =>
+            prevMessages.filter((msg) => msg._id !== messageId)
+          );
+        }, 5000);
+      }
+    });
+
+    // Cleanup function
+    return () => {
+      socket.off("connected");
+      socket.off("typing");
+      socket.off("stop typing");
+      socket.off("message viewed");
+    };
+  }, [user]);
 
   useEffect(() => {
     fetchMessages();
-
     selectedChatCompare = selectedChat;
-    // eslint-disable-next-line
   }, [selectedChat]);
 
   useEffect(() => {
     socket.on("message recieved", (newMessageRecieved) => {
       if (
-        !selectedChatCompare || // if chat is not selected or doesn't match current chat
+        !selectedChatCompare ||
         selectedChatCompare._id !== newMessageRecieved.chat._id
       ) {
         if (!notification.includes(newMessageRecieved)) {
@@ -210,9 +320,8 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
             color="#2C3E50"
             justifyContent={{ base: "space-between" }}
             alignItems="center"
-            borderBottom='1px solid #E0E0E0'
+            borderBottom="1px solid #E0E0E0"
           >
-           
             {messages &&
               (!selectedChat.isGroupChat ? (
                 <>
@@ -240,8 +349,6 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
             bg="#F8FAFC"
             w="100%"
             h="100%"
-            
-            
             overflowY="hidden"
           >
             {loading ? (
@@ -249,65 +356,154 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
                 size="xl"
                 w={20}
                 h={20}
-                color='blue.500'
+                color="blue.500"
                 alignSelf="center"
                 margin="auto"
               />
             ) : (
               <div className="messages">
-                <ScrollableChat messages={messages} />
+                <ScrollableChat
+                  messages={messages}
+                  onViewOnceClick={handleViewOnceMessage}
+                />
               </div>
             )}
 
-<FormControl id="first-name" isRequired mt={3}>
-  {istyping && (
-    <div>
-      <Lottie
-        options={defaultOptions}
-        width={70}
-        style={{ marginBottom: 15, marginLeft: 0 }}
-      />
-    </div>
-  )}
-  <Box display="flex" alignItems="center" gap="2">
-    <Input
-      variant="filled"
-      bg="white"
-      placeholder="Enter a message.."
-      value={newMessage}
-      onChange={typingHandler}
-      borderColor='#D1D5DB'
-      _hover={{ borderColor: "#A0AEC0" }}
-      _focus={{
-        borderColor: "blue.400",
-        boxShadow: "0 0 5px blue.400",
-      }}
-      borderRadius="lg"
-                fontFamily="'Poppins', sans-serif"
-                fontSize="16px"
-                color="#34495E"
-                p={4}
-    />
-    <IconButton
-      colorScheme="blue"
-      aria-label="Send message"
-      icon={<ArrowBackIcon transform="rotate(90deg)" />}
-      onClick={handleSendMessage}
-      isDisabled={!newMessage.trim()}
-      
-                borderRadius="full"
-                _hover={{ bg: "blue.600" }}
-                boxShadow="base"
-    />
-  </Box>
-</FormControl>
+            <FormControl id="first-name" isRequired mt={3}>
+              {istyping && (
+                <div>
+                  <Lottie
+                    options={defaultOptions}
+                    width={70}
+                    style={{ marginBottom: 15, marginLeft: 0 }}
+                  />
+                </div>
+              )}
 
+              {/* View Once Helper Text */}
+              {isViewOnceMessage(newMessage) && (
+                <Box
+                  mb={2}
+                  p={3}
+                  bg="purple.50"
+                  border="1px solid"
+                  borderColor="purple.200"
+                  borderRadius="lg"
+                  fontSize="sm"
+                  color="purple.700"
+                  display="flex"
+                  alignItems="center"
+                >
+                  <Text fontSize="16px" mr={2}>
+                    🔒
+                  </Text>
+                  <Text fontWeight="medium">
+                    This will be sent as a view-once message
+                  </Text>
+                </Box>
+              )}
+
+              <Box display="flex" alignItems="center" gap="2">
+                {/* Emoji Picker */}
+                <Popover
+                  isOpen={showEmojiPicker}
+                  onClose={() => setShowEmojiPicker(false)}
+                  placement="top-start"
+                >
+                  <PopoverTrigger>
+                    <IconButton
+                      aria-label="Select emoji"
+                      icon={<Text fontSize="20px">😊</Text>}
+                      onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                      variant="ghost"
+                      colorScheme="gray"
+                      borderRadius="full"
+                      _hover={{ bg: "gray.100" }}
+                      size="md"
+                    />
+                  </PopoverTrigger>
+                  <PopoverContent w="350px" p={0}>
+                    <EmojiPicker
+                      onEmojiClick={handleEmojiClick}
+                      width="100%"
+                      height="350px"
+                      searchDisabled={false}
+                      skinTonesDisabled={false}
+                      previewConfig={{
+                        showPreview: false,
+                      }}
+                      lazyLoadEmojis={true}
+                    />
+                  </PopoverContent>
+                </Popover>
+
+                <Input
+                  variant="filled"
+                  bg="white"
+                  placeholder="Type 'view_once your message' for disappearing messages..."
+                  value={newMessage}
+                  onChange={typingHandler}
+                  onKeyDown={sendMessage}
+                  borderColor={
+                    isViewOnceMessage(newMessage) ? "purple.200" : "#D1D5DB"
+                  }
+                  _hover={{
+                    borderColor: isViewOnceMessage(newMessage)
+                      ? "purple.300"
+                      : "#A0AEC0",
+                  }}
+                  _focus={{
+                    borderColor: isViewOnceMessage(newMessage)
+                      ? "purple.400"
+                      : "blue.400",
+                    boxShadow: `0 0 5px ${
+                      isViewOnceMessage(newMessage) ? "purple.400" : "blue.400"
+                    }`,
+                  }}
+                  borderRadius="lg"
+                  fontFamily="'Poppins', sans-serif"
+                  fontSize="16px"
+                  color="#34495E"
+                  p={4}
+                />
+
+                <IconButton
+                  colorScheme={
+                    isViewOnceMessage(newMessage) ? "purple" : "blue"
+                  }
+                  aria-label="Send message"
+                  icon={<ArrowBackIcon transform="rotate(90deg)" />}
+                  onClick={handleSendMessage}
+                  isDisabled={!newMessage.trim()}
+                  borderRadius="full"
+                  _hover={{
+                    bg: isViewOnceMessage(newMessage)
+                      ? "purple.600"
+                      : "blue.600",
+                  }}
+                  boxShadow="base"
+                />
+              </Box>
+            </FormControl>
           </Box>
         </>
       ) : (
-        // to get socket.io on same page
-        <Box display="flex" alignItems="center" justifyContent="center" h="100%" bg='#1F5F9' p={6} >
-          <Text fontSize="3xl" pb={3} fontFamily="'Poppins','sans-serif'" fontWeight='medium' color="hsl(224, 58%, 25%)" textAlign='center'>
+        <Box
+          display="flex"
+          alignItems="center"
+          justifyContent="center"
+          h="100%"
+          bg="#F8FAFC"
+          p={6}
+        >
+          <Text
+            fontSize="3xl"
+            pb={3}
+            fontFamily="'Poppins','sans-serif'"
+            fontWeight="medium"
+            color="hsl(224, 58%, 25%)"
+            textAlign="center"
+          >
             Click on a user to start chatting..
           </Text>
         </Box>
