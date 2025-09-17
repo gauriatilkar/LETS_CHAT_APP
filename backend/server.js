@@ -11,9 +11,13 @@ const cors = require("cors"); // Importing CORS middleware
 dotenv.config();
 connectDB();
 const app = express();
+// Enable CORS only for frontend domain
+const corsOptions = {
+  origin: "https://letschatapp-mi823pmy4-gauriatilkar-8221s-projects.vercel.app",
+  credentials: true, // if you use cookies/auth
+};
+app.use(cors(corsOptions));
 
-// Enable CORS for all origins
-app.use(cors());  // This will allow all origins by default
 
 app.use(express.json()); // to accept json data
 
