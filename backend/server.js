@@ -13,7 +13,7 @@ connectDB();
 const app = express();
 // Enable CORS only for frontend domain
 const allowedOrigins = [
-  "https://letschatapp-git-main-gauriatilkar-8221s-projects.vercel.app", 
+  "https://letschatapp-git-main-gauriatilkar-8221s-projects.vercel.app/", 
 ];
 
 const corsOptions = {
