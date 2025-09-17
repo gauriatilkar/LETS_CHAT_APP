@@ -12,11 +12,12 @@ import {
   PopoverContent,
   Button,
   Badge,
+  Tooltip,
 } from "@chakra-ui/react";
 import { getSender, getSenderFull } from "../config/ChatLogics";
 import { useEffect, useState } from "react";
 import axios from "axios";
-import { ArrowBackIcon } from "@chakra-ui/icons";
+import { ArrowBackIcon, LockIcon } from "@chakra-ui/icons";
 import ProfileModal from "./miscellaneous/ProfileModal";
 import ScrollableChat from "./ScrollableChat";
 import Lottie from "react-lottie";
@@ -39,6 +40,7 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
   const [typing, setTyping] = useState(false);
   const [istyping, setIsTyping] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [isViewOnceEnabled, setIsViewOnceEnabled] = useState(false); // New state for view-once toggle
   const toast = useToast();
 
   const defaultOptions = {
@@ -54,11 +56,6 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
     ChatState();
 
   const API_URL = import.meta.env.VITE_BACKEND_URL;
-
-  // Check if message starts with view-once trigger
-  const isViewOnceMessage = (message) => {
-    return message.trim().toLowerCase().startsWith("view_once");
-  };
 
   const fetchMessages = async () => {
     if (!selectedChat) return;
@@ -109,17 +106,11 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
           },
         };
 
-        let messageContent = newMessage.trim();
-        let isViewOnce = false;
-
-        // Check if message starts with view_once
-        if (isViewOnceMessage(messageContent)) {
-          isViewOnce = true;
-          // Remove the view_once prefix from the content
-          messageContent = messageContent.substring(9).trim(); // Remove "view_once" and any spaces
-        }
+        const messageContent = newMessage.trim();
+        const isViewOnce = isViewOnceEnabled; // Use the toggle state
 
         setNewMessage("");
+        setIsViewOnceEnabled(false); // Reset the toggle after sending
 
         const { data } = await axios.post(
           `${API_URL}/api/message`,
@@ -221,6 +212,21 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
   const handleEmojiClick = (emojiObject) => {
     setNewMessage((prev) => prev + emojiObject.emoji);
     setShowEmojiPicker(false);
+  };
+
+  // Toggle view-once mode
+  const toggleViewOnceMode = () => {
+    setIsViewOnceEnabled(!isViewOnceEnabled);
+    if (!isViewOnceEnabled) {
+      toast({
+        title: "View Once Mode Enabled 🔒",
+        description: "Your next message will disappear after being viewed",
+        status: "info",
+        duration: 2000,
+        isClosable: true,
+        position: "bottom",
+      });
+    }
   };
 
   useEffect(() => {
@@ -381,7 +387,7 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
               )}
 
               {/* View Once Helper Text */}
-              {isViewOnceMessage(newMessage) && (
+              {isViewOnceEnabled && (
                 <Box
                   mb={2}
                   p={3}
@@ -393,13 +399,26 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
                   color="purple.700"
                   display="flex"
                   alignItems="center"
+                  justifyContent="space-between"
                 >
-                  <Text fontSize="16px" mr={2}>
-                    🔒
-                  </Text>
-                  <Text fontWeight="medium">
-                    This will be sent as a view-once message
-                  </Text>
+                  <Box display="flex" alignItems="center">
+                    <Text fontSize="16px" mr={2}>
+                      🔒
+                    </Text>
+                    <Text fontWeight="medium">
+                      View-once mode enabled - message will disappear after
+                      viewing
+                    </Text>
+                  </Box>
+                  <Button
+                    size="xs"
+                    variant="ghost"
+                    colorScheme="purple"
+                    onClick={() => setIsViewOnceEnabled(false)}
+                    _hover={{ bg: "purple.100" }}
+                  >
+                    Cancel
+                  </Button>
                 </Box>
               )}
 
@@ -437,27 +456,51 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
                   </PopoverContent>
                 </Popover>
 
+                {/* View Once Toggle Button */}
+                <Tooltip
+                  label={
+                    isViewOnceEnabled
+                      ? "View-once enabled (click to disable)"
+                      : "Enable view-once message"
+                  }
+                  placement="top"
+                >
+                  <IconButton
+                    aria-label="Toggle view-once message"
+                    icon={<LockIcon />}
+                    onClick={toggleViewOnceMode}
+                    variant={isViewOnceEnabled ? "solid" : "ghost"}
+                    colorScheme={isViewOnceEnabled ? "purple" : "gray"}
+                    borderRadius="full"
+                    _hover={{
+                      bg: isViewOnceEnabled ? "purple.600" : "gray.100",
+                    }}
+                    size="md"
+                    bg={isViewOnceEnabled ? "purple.500" : "transparent"}
+                    color={isViewOnceEnabled ? "white" : "gray.500"}
+                    boxShadow={isViewOnceEnabled ? "md" : "none"}
+                  />
+                </Tooltip>
+
                 <Input
                   variant="filled"
                   bg="white"
-                  placeholder="Type 'view_once your message' for disappearing messages..."
+                  placeholder={
+                    isViewOnceEnabled
+                      ? "Type your disappearing message..."
+                      : "Type a message..."
+                  }
                   value={newMessage}
                   onChange={typingHandler}
                   onKeyDown={sendMessage}
-                  borderColor={
-                    isViewOnceMessage(newMessage) ? "purple.200" : "#D1D5DB"
-                  }
+                  borderColor={isViewOnceEnabled ? "purple.200" : "#D1D5DB"}
                   _hover={{
-                    borderColor: isViewOnceMessage(newMessage)
-                      ? "purple.300"
-                      : "#A0AEC0",
+                    borderColor: isViewOnceEnabled ? "purple.300" : "#A0AEC0",
                   }}
                   _focus={{
-                    borderColor: isViewOnceMessage(newMessage)
-                      ? "purple.400"
-                      : "blue.400",
+                    borderColor: isViewOnceEnabled ? "purple.400" : "blue.400",
                     boxShadow: `0 0 5px ${
-                      isViewOnceMessage(newMessage) ? "purple.400" : "blue.400"
+                      isViewOnceEnabled ? "purple.400" : "blue.400"
                     }`,
                   }}
                   borderRadius="lg"
@@ -468,18 +511,14 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
                 />
 
                 <IconButton
-                  colorScheme={
-                    isViewOnceMessage(newMessage) ? "purple" : "blue"
-                  }
+                  colorScheme={isViewOnceEnabled ? "purple" : "blue"}
                   aria-label="Send message"
                   icon={<ArrowBackIcon transform="rotate(90deg)" />}
                   onClick={handleSendMessage}
                   isDisabled={!newMessage.trim()}
                   borderRadius="full"
                   _hover={{
-                    bg: isViewOnceMessage(newMessage)
-                      ? "purple.600"
-                      : "blue.600",
+                    bg: isViewOnceEnabled ? "purple.600" : "blue.600",
                   }}
                   boxShadow="base"
                 />
