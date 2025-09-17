@@ -8,140 +8,158 @@ const { notFound, errorHandler } = require("./middleware/errorMiddleware");
 const path = require("path");
 const cors = require("cors");
 
+// Load environment variables FIRST
 dotenv.config();
-connectDB();
+
+// Connect to database
+connectDB().catch(console.error);
+
 const app = express();
 
-// CORS Configuration - Fixed
-const allowedOrigins = [
-  "https://letschatapp-git-main-gauriatilkar-8221s-projects.vercel.app",
-  "https://letschatapp-git-main-gauriatilkar-8221s-projects.vercel.app/",
-  "http://localhost:3000",
-  "http://localhost:3000/",
-];
+// CRITICAL: CORS must be the very first middleware
+// This ensures CORS headers are set even if other middleware fails
 
-// Simple and reliable CORS setup
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+
+  // Log every request for debugging
+  console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
+  console.log("Origin:", origin);
+  console.log("User-Agent:", req.headers["user-agent"]);
+
+  // Always set CORS headers for your frontend domain
+  if (
+    origin ===
+    "https://letschatapp-git-main-gauriatilkar-8221s-projects.vercel.app"
+  ) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+  }
+
+  // Set all required CORS headers
+  res.setHeader("Access-Control-Allow-Credentials", "true");
+  res.setHeader(
+    "Access-Control-Allow-Methods",
+    "GET, POST, PUT, DELETE, OPTIONS"
+  );
+  res.setHeader(
+    "Access-Control-Allow-Headers",
+    "Content-Type, Authorization, X-Requested-With, Accept, Origin"
+  );
+  res.setHeader("Access-Control-Max-Age", "86400");
+
+  // Handle preflight OPTIONS requests immediately
+  if (req.method === "OPTIONS") {
+    console.log("OPTIONS request - sending 200");
+    res.status(200).end();
+    return;
+  }
+
+  next();
+});
+
+// Additional CORS using cors package as backup
 app.use(
   cors({
-    origin: function (origin, callback) {
-      console.log("Incoming origin:", origin); // Debug log
-
-      // Allow requests with no origin (mobile apps, Postman, etc.)
-      if (!origin) return callback(null, true);
-
-      // Remove trailing slash for comparison
-      const normalizedOrigin = origin.replace(/\/$/, "");
-      const normalizedAllowedOrigins = allowedOrigins.map((o) =>
-        o.replace(/\/$/, "")
-      );
-
-      if (normalizedAllowedOrigins.includes(normalizedOrigin)) {
-        callback(null, true);
-      } else {
-        console.log("Origin not allowed:", origin);
-        callback(new Error("Not allowed by CORS"));
-      }
-    },
+    origin:
+      "https://letschatapp-git-main-gauriatilkar-8221s-projects.vercel.app",
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
-    exposedHeaders: ["*"],
-    maxAge: 86400, // Cache preflight for 24 hours
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization",
+      "X-Requested-With",
+      "Accept",
+      "Origin",
+    ],
+    optionsSuccessStatus: 200,
   })
 );
 
-// Explicit preflight handling for all routes
-app.options("*", (req, res) => {
-  const origin = req.headers.origin;
+// Body parsing middleware
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ extended: true }));
 
+// Health check route
+app.get("/", (req, res) => {
+  console.log("Health check accessed");
+  res.json({
+    message: "Chat App Backend API is running!",
+    timestamp: new Date().toISOString(),
+    env: process.env.NODE_ENV || "development",
+  });
+});
+
+// CORS test route
+app.get("/api/test", (req, res) => {
+  console.log("Test route accessed");
+  res.json({
+    message: "CORS test successful",
+    origin: req.headers.origin,
+    timestamp: new Date().toISOString(),
+  });
+});
+
+// Wrap routes with error handling to prevent CORS headers from being lost
+const asyncHandler = (fn) => (req, res, next) => {
+  Promise.resolve(fn(req, res, next)).catch((error) => {
+    console.error("Route error:", error);
+
+    // Ensure CORS headers are still set even on error
+    if (
+      req.headers.origin ===
+      "https://letschatapp-git-main-gauriatilkar-8221s-projects.vercel.app"
+    ) {
+      res.setHeader("Access-Control-Allow-Origin", req.headers.origin);
+      res.setHeader("Access-Control-Allow-Credentials", "true");
+    }
+
+    next(error);
+  });
+};
+
+// API Routes with error handling
+app.use(
+  "/api/user",
+  asyncHandler((req, res, next) => {
+    userRoutes(req, res, next);
+  })
+);
+app.use(
+  "/api/chat",
+  asyncHandler((req, res, next) => {
+    chatRoutes(req, res, next);
+  })
+);
+app.use(
+  "/api/message",
+  asyncHandler((req, res, next) => {
+    messageRoutes(req, res, next);
+  })
+);
+
+// Custom error handler that preserves CORS headers
+app.use((error, req, res, next) => {
+  console.error("Error handler triggered:", error.message);
+
+  // Ensure CORS headers are set even in error responses
   if (
-    !origin ||
-    allowedOrigins.some((allowed) => {
-      const normalizedOrigin = origin.replace(/\/$/, "");
-      const normalizedAllowed = allowed.replace(/\/$/, "");
-      return normalizedOrigin === normalizedAllowed;
-    })
+    req.headers.origin ===
+    "https://letschatapp-git-main-gauriatilkar-8221s-projects.vercel.app"
   ) {
-    res.header("Access-Control-Allow-Origin", origin || "*");
-    res.header(
-      "Access-Control-Allow-Methods",
-      "GET, POST, PUT, DELETE, OPTIONS"
-    );
-    res.header(
-      "Access-Control-Allow-Headers",
-      "Content-Type, Authorization, X-Requested-With"
-    );
-    res.header("Access-Control-Allow-Credentials", "true");
-    res.header("Access-Control-Max-Age", "86400");
+    res.setHeader("Access-Control-Allow-Origin", req.headers.origin);
+    res.setHeader("Access-Control-Allow-Credentials", "true");
   }
 
-  res.sendStatus(200);
+  res.status(error.statusCode || 500).json({
+    message: error.message,
+    stack: process.env.NODE_ENV === "production" ? null : error.stack,
+  });
 });
 
-// Body parser middleware
-app.use(express.json());
-
-// API Routes
-app.use("/api/user", userRoutes);
-app.use("/api/chat", chatRoutes);
-app.use("/api/message", messageRoutes);
-
-// Root route for testing
-app.get("/", (req, res) => {
-  res.json({ message: "Chat App Backend API is running!" });
-});
-
-// Error Handling middlewares
+// Fallback error handlers
 app.use(notFound);
 app.use(errorHandler);
 
 const PORT = process.env.PORT || 5000;
 
-const server = app.listen(PORT, () =>
-  console.log(`Server running on PORT ${PORT}...`)
-);
-
-// Socket.io configuration with proper CORS
-const io = require("socket.io")(server, {
-  pingTimeout: 60000,
-  cors: {
-    origin: allowedOrigins,
-    credentials: true,
-    methods: ["GET", "POST"],
-  },
-});
-
-io.on("connection", (socket) => {
-  console.log("Connected to socket.io");
-
-  socket.on("setup", (userData) => {
-    socket.join(userData._id);
-    socket.emit("connected");
-  });
-
-  socket.on("join chat", (room) => {
-    socket.join(room);
-    console.log("User Joined Room: " + room);
-  });
-
-  socket.on("typing", (room) => socket.in(room).emit("typing"));
-  socket.on("stop typing", (room) => socket.in(room).emit("stop typing"));
-
-  socket.on("new message", (newMessageRecieved) => {
-    var chat = newMessageRecieved.chat;
-
-    if (!chat.users) return console.log("chat.users not defined");
-
-    chat.users.forEach((user) => {
-      if (user._id == newMessageRecieved.sender._id) return;
-
-      socket.in(user._id).emit("message recieved", newMessageRecieved);
-    });
-  });
-
-  socket.on("disconnect", () => {
-    console.log("USER DISCONNECTED");
-  });
-});
-
-module.exports = app;
+const server = app;
