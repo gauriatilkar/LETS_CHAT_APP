@@ -12,11 +12,23 @@ dotenv.config();
 connectDB();
 const app = express();
 // Enable CORS only for frontend domain
+const allowedOrigins = [
+  "https://letschatapp-git-main-gauriatilkar-8221s-projects.vercel.app", 
+];
+
 const corsOptions = {
-  origin: "https://letschatapp-git-main-gauriatilkar-8221s-projects.vercel.app",
-  credentials: true, // if you use cookies/auth
+  origin: function (origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error("Not allowed by CORS"));
+    }
+  },
+  credentials: true,
 };
+
 app.use(cors(corsOptions));
+
 
 
 app.use(express.json()); // to accept json data
