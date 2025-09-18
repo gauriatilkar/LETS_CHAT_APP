@@ -1,6 +1,6 @@
 const express = require("express");
 const dotenv = require("dotenv");
-const cors = require("cors");
+const http = require("http");
 
 // Load environment variables
 dotenv.config();
@@ -96,58 +96,60 @@ app.use("/api/message", messageRoutes);
 app.use(notFound);
 app.use(errorHandler);
 
+// ✅ FIX: Use Render's assigned port
 const PORT = process.env.PORT || 5000;
 
-// Only create server if not in production (Vercel handles this)
-if (process.env.NODE_ENV !== "production") {
-  const server = app.listen(PORT, () => {
-    console.log(`Server running on PORT ${PORT}`);
+// ✅ FIX: Create HTTP server for Socket.IO
+const server = http.createServer(app);
+
+// ✅ FIX: Always initialize Socket.IO (not just in development)
+try {
+  const io = require("socket.io")(server, {
+    pingTimeout: 60000,
+    cors: {
+      origin: "*",
+      credentials: true,
+    },
   });
 
-  // Only add Socket.io in local development
-  try {
-    const io = require("socket.io")(server, {
-      pingTimeout: 60000,
-      cors: {
-        origin: "*",
-        credentials: true,
-      },
+  io.on("connection", (socket) => {
+    console.log("Connected to socket.io");
+
+    socket.on("setup", (userData) => {
+      socket.join(userData._id);
+      socket.emit("connected");
     });
 
-    io.on("connection", (socket) => {
-      console.log("Connected to socket.io");
+    socket.on("join chat", (room) => {
+      socket.join(room);
+      console.log("User Joined Room: " + room);
+    });
 
-      socket.on("setup", (userData) => {
-        socket.join(userData._id);
-        socket.emit("connected");
-      });
+    socket.on("typing", (room) => socket.in(room).emit("typing"));
+    socket.on("stop typing", (room) => socket.in(room).emit("stop typing"));
 
-      socket.on("join chat", (room) => {
-        socket.join(room);
-        console.log("User Joined Room: " + room);
-      });
+    socket.on("new message", (newMessageRecieved) => {
+      var chat = newMessageRecieved.chat;
+      if (!chat.users) return console.log("chat.users not defined");
 
-      socket.on("typing", (room) => socket.in(room).emit("typing"));
-      socket.on("stop typing", (room) => socket.in(room).emit("stop typing"));
-
-      socket.on("new message", (newMessageRecieved) => {
-        var chat = newMessageRecieved.chat;
-        if (!chat.users) return console.log("chat.users not defined");
-
-        chat.users.forEach((user) => {
-          if (user._id == newMessageRecieved.sender._id) return;
-          socket.in(user._id).emit("message recieved", newMessageRecieved);
-        });
-      });
-
-      socket.on("disconnect", () => {
-        console.log("USER DISCONNECTED");
+      chat.users.forEach((user) => {
+        if (user._id == newMessageRecieved.sender._id) return;
+        socket.in(user._id).emit("message recieved", newMessageRecieved);
       });
     });
-  } catch (error) {
-    console.log("Socket.io not available:", error.message);
-  }
+
+    socket.on("disconnect", () => {
+      console.log("USER DISCONNECTED");
+    });
+  });
+} catch (error) {
+  console.log("Socket.io not available:", error.message);
 }
 
-// Export for Vercel
+// ✅ FIX: Always start server, listen on all interfaces
+server.listen(PORT, "0.0.0.0", () => {
+  console.log(`Server running on PORT ${PORT}`);
+});
+
+// Export for compatibility
 module.exports = app;
