@@ -11,10 +11,23 @@ const ChatProvider = ({ children }) => {
   const [chats, setChats] = useState([]);
 
   const navigate = useNavigate();
-  const location = useLocation(); // <-- MOVE inside the component
+  const location = useLocation();
+
+  const API_URL = import.meta.env.VITE_BACKEND_URL;
+
+
 
   useEffect(() => {
-    const userInfo = JSON.parse(localStorage.getItem("userInfo"));
+    // Debug: Check localStorage before parsing
+    const rawUserInfo = localStorage.getItem("userInfo");
+
+    let userInfo = null;
+    try {
+      userInfo = JSON.parse(rawUserInfo);
+    } catch (error) {
+      console.error("Error parsing userInfo from localStorage:", error);
+    }
+
     setUser(userInfo);
 
     const publicPaths = ["/", "/forgot-password", "/reset-password"];
@@ -22,26 +35,38 @@ const ChatProvider = ({ children }) => {
       location.pathname.includes(path)
     );
 
+ ;
+
     if (!userInfo && !isPublic) {
-      navigate("/"); // Redirect only if user not logged in and not on public route
-    } else if (userInfo) {
-      fetchChats(userInfo.token); // Fetch chats when user info is available
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+      navigate("/");
+    } 
   }, [navigate, location]);
 
   const fetchChats = async (token) => {
+
+    
+
+   
+
+    const url = `${API_URL}/api/chat`;
+    const headers = {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    };
+
+   
+
     try {
-      const response = await axios.get(`${API_URL}/api/chats`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
+      const response = await axios.get(url, { headers });
       setChats(response.data);
     } catch (error) {
-      console.error("Failed to fetch chats", error);
+      console.error("Error object:", error);
+
+
     }
   };
+
+ 
 
   return (
     <ChatContext.Provider
@@ -54,6 +79,7 @@ const ChatProvider = ({ children }) => {
         setNotification,
         chats,
         setChats,
+        fetchChats,
       }}
     >
       {children}
