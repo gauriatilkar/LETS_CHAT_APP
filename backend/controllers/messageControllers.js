@@ -35,7 +35,7 @@ const allMessages = asyncHandler(async (req, res) => {
 //@route           POST /api/Message/
 //@access          Protected
 const sendMessage = asyncHandler(async (req, res) => {
-  const { content, chatId, isViewOnce = false } = req.body;
+  const { content, chatId, isViewOnce = false, mediaType = "text" } = req.body;
 
   if (!content || !chatId) {
     console.log("Invalid data passed into request");
@@ -49,6 +49,7 @@ const sendMessage = asyncHandler(async (req, res) => {
     isViewOnce: isViewOnce,
     viewedBy: [], // Track who has viewed this message
     isDeleted: false,
+    mediaType: mediaType, // Store the media type (text, image, video)
   };
 
   try {
@@ -135,6 +136,7 @@ const getViewOnceMessage = asyncHandler(async (req, res) => {
       hasBeenViewed: true,
       viewedBy: message.viewedBy,
       isDeleted: message.isDeleted,
+      mediaType: message.mediaType, // Include media type in response
     });
   } catch (error) {
     res.status(400);
@@ -189,6 +191,7 @@ const markViewOnceAsViewed = asyncHandler(async (req, res) => {
       isDeleted: message.isDeleted,
       content: message.isDeleted ? null : message.content,
       viewedBy: message.viewedBy,
+      mediaType: message.mediaType,
     });
   } catch (error) {
     res.status(400);

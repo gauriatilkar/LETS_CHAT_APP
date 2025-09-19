@@ -10,6 +10,12 @@ const messageSchema = mongoose.Schema(
     isViewOnce: { type: Boolean, default: false },
     viewedBy: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
     isDeleted: { type: Boolean, default: false },
+    // Add media type field to distinguish between text, image, and video
+    mediaType: {
+      type: String,
+      enum: ["text", "image", "video"],
+      default: "text",
+    },
   },
   { timestamps: true }
 );

@@ -1,7 +1,8 @@
 import React from "react";
 import { FormControl } from "@chakra-ui/form-control";
 import { Input } from "@chakra-ui/input";
-import { Box, Text } from "@chakra-ui/layout";
+import { Box, Text, VStack, HStack, AspectRatio } from "@chakra-ui/layout";
+import { Image } from "@chakra-ui/react";
 import "./styles.css";
 import {
   IconButton,
@@ -13,11 +14,22 @@ import {
   Button,
   Badge,
   Tooltip,
+  Modal,
+  ModalOverlay,
+  ModalContent,
+  ModalHeader,
+  ModalBody,
+  ModalCloseButton,
+  useDisclosure,
+  Progress,
+  Flex,
+  CloseButton,
 } from "@chakra-ui/react";
 import { getSender, getSenderFull } from "../config/ChatLogics";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import axios from "axios";
-import { ArrowBackIcon, LockIcon } from "@chakra-ui/icons";
+import { ArrowBackIcon, LockIcon, AttachmentIcon } from "@chakra-ui/icons";
+import { FiImage, FiVideo, FiCamera } from "react-icons/fi";
 import ProfileModal from "./miscellaneous/ProfileModal";
 import ScrollableChat from "./ScrollableChat";
 import Lottie from "react-lottie";
@@ -40,7 +52,18 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
   const [typing, setTyping] = useState(false);
   const [istyping, setIsTyping] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
-  const [isViewOnceEnabled, setIsViewOnceEnabled] = useState(false); // New state for view-once toggle
+  const [isViewOnceEnabled, setIsViewOnceEnabled] = useState(false);
+
+  // Media handling states
+  const [selectedMedia, setSelectedMedia] = useState(null);
+  const [mediaPreview, setMediaPreview] = useState(null);
+  const [mediaType, setMediaType] = useState(null);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [isUploading, setIsUploading] = useState(false);
+  const [showMediaOptions, setShowMediaOptions] = useState(false);
+
+  const fileInputRef = useRef();
+  const { isOpen, onOpen, onClose } = useDisclosure();
   const toast = useToast();
 
   const defaultOptions = {
@@ -89,6 +112,167 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
     }
   };
 
+  // Handle file selection
+  const handleFileSelect = (event) => {
+    const file = event.target.files[0];
+    if (file) {
+      // Validate file size (max 50MB)
+      if (file.size > 50 * 1024 * 1024) {
+        toast({
+          title: "File too large",
+          description: "Please select a file smaller than 50MB",
+          status: "error",
+          duration: 3000,
+          isClosable: true,
+          position: "bottom",
+        });
+        return;
+      }
+
+      // Validate file type
+      const validTypes = [
+        "image/jpeg",
+        "image/jpg",
+        "image/png",
+        "image/gif",
+        "image/webp",
+        "video/mp4",
+        "video/webm",
+        "video/ogg",
+        "video/mov",
+        "video/avi",
+      ];
+
+      if (!validTypes.includes(file.type)) {
+        toast({
+          title: "Invalid file type",
+          description: "Please select an image or video file",
+          status: "error",
+          duration: 3000,
+          isClosable: true,
+          position: "bottom",
+        });
+        return;
+      }
+
+      setSelectedMedia(file);
+      setMediaType(file.type.startsWith("image/") ? "image" : "video");
+
+      // Create preview
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        setMediaPreview(e.target.result);
+        onOpen(); // Open preview modal
+      };
+      reader.readAsDataURL(file);
+    }
+    setShowMediaOptions(false);
+  };
+
+  // Upload media to Cloudinary
+  const uploadToCloudinary = async (file) => {
+    return new Promise((resolve, reject) => {
+      const data = new FormData();
+      data.append("file", file);
+      data.append("upload_preset", "chat-app"); // Use your upload preset
+
+      // Determine the cloudinary endpoint based on file type
+      const isVideo = file.type.startsWith("video/");
+      const cloudinaryUrl = isVideo
+        ? "https://api.cloudinary.com/v1_1/dwdhel37o/video/upload"
+        : "https://api.cloudinary.com/v1_1/dwdhel37o/image/upload";
+
+      // Use XMLHttpRequest to track upload progress
+      const xhr = new XMLHttpRequest();
+
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable) {
+          const progress = Math.round((event.loaded * 100) / event.total);
+          setUploadProgress(progress);
+        }
+      };
+
+      xhr.onload = () => {
+        if (xhr.status === 200) {
+          const response = JSON.parse(xhr.responseText);
+          resolve(response.secure_url);
+        } else {
+          reject(new Error("Upload failed"));
+        }
+      };
+
+      xhr.onerror = () => {
+        reject(new Error("Upload failed"));
+      };
+
+      xhr.open("POST", cloudinaryUrl);
+      xhr.send(data);
+    });
+  };
+
+  // Send media message
+  const sendMediaMessage = async () => {
+    if (!selectedMedia) return;
+
+    setIsUploading(true);
+    try {
+      // Upload to Cloudinary first
+      const mediaUrl = await uploadToCloudinary(selectedMedia);
+
+      // Send message with media URL
+      const config = {
+        headers: {
+          "Content-type": "application/json",
+          Authorization: `Bearer ${user.token}`,
+        },
+      };
+
+      const { data } = await axios.post(
+        `${API_URL}/api/message`,
+        {
+          content: mediaUrl, // Store the Cloudinary URL as content
+          chatId: selectedChat._id,
+          isViewOnce: isViewOnceEnabled,
+          mediaType: mediaType, // Add media type to distinguish from text
+        },
+        config
+      );
+
+      // Emit socket event
+      socket.emit("new message", data);
+      setMessages([...messages, data]);
+
+      // Reset states
+      setSelectedMedia(null);
+      setMediaPreview(null);
+      setMediaType(null);
+      setIsViewOnceEnabled(false);
+      setUploadProgress(0);
+      onClose();
+
+      toast({
+        title: `${
+          mediaType === "image" ? "Image" : "Video"
+        } sent successfully!`,
+        status: "success",
+        duration: 2000,
+        isClosable: true,
+        position: "bottom",
+      });
+    } catch (error) {
+      toast({
+        title: "Upload failed",
+        description: error.response?.data?.message || "Failed to send media",
+        status: "error",
+        duration: 5000,
+        isClosable: true,
+        position: "bottom",
+      });
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
   const sendMessage = async (event) => {
     if (event.key === "Enter" && newMessage) {
       await handleSendMessage();
@@ -107,10 +291,10 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
         };
 
         const messageContent = newMessage.trim();
-        const isViewOnce = isViewOnceEnabled; // Use the toggle state
+        const isViewOnce = isViewOnceEnabled;
 
         setNewMessage("");
-        setIsViewOnceEnabled(false); // Reset the toggle after sending
+        setIsViewOnceEnabled(false);
 
         const { data } = await axios.post(
           `${API_URL}/api/message`,
@@ -161,7 +345,6 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
         config
       );
 
-      // Update the message in the local state
       setMessages((prevMessages) =>
         prevMessages.map((msg) =>
           msg._id === messageId
@@ -175,7 +358,6 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
         )
       );
 
-      // Emit socket event to update other users
       socket.emit("message viewed", {
         messageId,
         chatId: selectedChat._id,
@@ -191,7 +373,6 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
         position: "bottom",
       });
 
-      // Remove the message after 5 seconds to allow reading time
       setTimeout(() => {
         setMessages((prevMessages) =>
           prevMessages.filter((msg) => msg._id !== messageId)
@@ -214,7 +395,6 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
     setShowEmojiPicker(false);
   };
 
-  // Toggle view-once mode
   const toggleViewOnceMode = () => {
     setIsViewOnceEnabled(!isViewOnceEnabled);
     if (!isViewOnceEnabled) {
@@ -229,6 +409,15 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
     }
   };
 
+  // Close media preview
+  const closeMediaPreview = () => {
+    setSelectedMedia(null);
+    setMediaPreview(null);
+    setMediaType(null);
+    setUploadProgress(0);
+    onClose();
+  };
+
   useEffect(() => {
     socket = io(ENDPOINT);
     socket.emit("setup", user);
@@ -236,10 +425,8 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
     socket.on("typing", () => setIsTyping(true));
     socket.on("stop typing", () => setIsTyping(false));
 
-    // Listen for view-once message events
     socket.on("message viewed", ({ messageId, userId }) => {
       if (userId !== user._id) {
-        // Update message state to show it's been viewed
         setMessages((prevMessages) =>
           prevMessages.map((msg) =>
             msg._id === messageId
@@ -252,7 +439,6 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
           )
         );
 
-        // Remove the message after 5 seconds
         setTimeout(() => {
           setMessages((prevMessages) =>
             prevMessages.filter((msg) => msg._id !== messageId)
@@ -261,7 +447,6 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
       }
     });
 
-    // Cleanup function
     return () => {
       socket.off("connected");
       socket.off("typing");
@@ -386,7 +571,6 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
                 </div>
               )}
 
-              {/* View Once Helper Text */}
               {isViewOnceEnabled && (
                 <Box
                   mb={2}
@@ -455,6 +639,77 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
                     />
                   </PopoverContent>
                 </Popover>
+
+                {/* Media Attachment Options */}
+                <Popover
+                  isOpen={showMediaOptions}
+                  onClose={() => setShowMediaOptions(false)}
+                  placement="top"
+                >
+                  <PopoverTrigger>
+                    <IconButton
+                      aria-label="Attach media"
+                      icon={<AttachmentIcon />}
+                      onClick={() => setShowMediaOptions(!showMediaOptions)}
+                      variant="ghost"
+                      colorScheme="gray"
+                      borderRadius="full"
+                      _hover={{ bg: "gray.100" }}
+                      size="md"
+                    />
+                  </PopoverTrigger>
+                  <PopoverContent w="200px" p={2}>
+                    <VStack spacing={1}>
+                      <Button
+                        leftIcon={<FiImage />}
+                        variant="ghost"
+                        justifyContent="flex-start"
+                        w="100%"
+                        onClick={() => {
+                          fileInputRef.current.accept = "image/*";
+                          fileInputRef.current.click();
+                        }}
+                        _hover={{ bg: "blue.50" }}
+                      >
+                        Photo
+                      </Button>
+                      <Button
+                        leftIcon={<FiVideo />}
+                        variant="ghost"
+                        justifyContent="flex-start"
+                        w="100%"
+                        onClick={() => {
+                          fileInputRef.current.accept = "video/*";
+                          fileInputRef.current.click();
+                        }}
+                        _hover={{ bg: "blue.50" }}
+                      >
+                        Video
+                      </Button>
+                      <Button
+                        leftIcon={<FiCamera />}
+                        variant="ghost"
+                        justifyContent="flex-start"
+                        w="100%"
+                        onClick={() => {
+                          fileInputRef.current.accept = "image/*,video/*";
+                          fileInputRef.current.click();
+                        }}
+                        _hover={{ bg: "blue.50" }}
+                      >
+                        Camera
+                      </Button>
+                    </VStack>
+                  </PopoverContent>
+                </Popover>
+
+                {/* Hidden File Input */}
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  style={{ display: "none" }}
+                  onChange={handleFileSelect}
+                />
 
                 {/* View Once Toggle Button */}
                 <Tooltip
@@ -525,6 +780,112 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
               </Box>
             </FormControl>
           </Box>
+
+          {/* Media Preview Modal */}
+          <Modal isOpen={isOpen} onClose={closeMediaPreview} size="xl">
+            <ModalOverlay bg="blackAlpha.800" />
+            <ModalContent maxW="600px" bg="white">
+              <ModalHeader>
+                <Flex alignItems="center" justifyContent="space-between">
+                  <Text>
+                    Send {mediaType === "image" ? "Photo" : "Video"}
+                    {isViewOnceEnabled && (
+                      <Badge ml={2} colorScheme="purple">
+                        View Once 🔒
+                      </Badge>
+                    )}
+                  </Text>
+                  <CloseButton onClick={closeMediaPreview} />
+                </Flex>
+              </ModalHeader>
+
+              <ModalBody pb={6}>
+                <VStack spacing={4}>
+                  {/* Media Preview */}
+                  <Box
+                    w="100%"
+                    maxH="400px"
+                    bg="gray.50"
+                    borderRadius="lg"
+                    overflow="hidden"
+                    position="relative"
+                  >
+                    {mediaType === "image" ? (
+                      <Image
+                        src={mediaPreview}
+                        alt="Preview"
+                        w="100%"
+                        h="auto"
+                        maxH="400px"
+                        objectFit="contain"
+                      />
+                    ) : (
+                      <AspectRatio ratio={16 / 9} maxH="400px">
+                        <video
+                          src={mediaPreview}
+                          controls
+                          style={{
+                            width: "100%",
+                            height: "100%",
+                            objectFit: "contain",
+                          }}
+                        />
+                      </AspectRatio>
+                    )}
+                  </Box>
+
+                  {/* Upload Progress */}
+                  {isUploading && (
+                    <Box w="100%">
+                      <Text fontSize="sm" color="gray.600" mb={2}>
+                        Uploading to Cloudinary... {uploadProgress}%
+                      </Text>
+                      <Progress
+                        value={uploadProgress}
+                        colorScheme="blue"
+                        borderRadius="full"
+                      />
+                    </Box>
+                  )}
+
+                  {/* View Once Toggle */}
+                  <HStack w="100%" justifyContent="space-between">
+                    <Button
+                      leftIcon={<LockIcon />}
+                      variant={isViewOnceEnabled ? "solid" : "outline"}
+                      colorScheme="purple"
+                      onClick={toggleViewOnceMode}
+                      size="sm"
+                    >
+                      {isViewOnceEnabled
+                        ? "View Once Enabled"
+                        : "Enable View Once"}
+                    </Button>
+                  </HStack>
+
+                  {/* Action Buttons */}
+                  <HStack spacing={4} w="100%" justifyContent="flex-end">
+                    <Button
+                      variant="ghost"
+                      onClick={closeMediaPreview}
+                      disabled={isUploading}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      colorScheme={isViewOnceEnabled ? "purple" : "blue"}
+                      onClick={sendMediaMessage}
+                      isLoading={isUploading}
+                      loadingText="Sending..."
+                      leftIcon={<ArrowBackIcon transform="rotate(90deg)" />}
+                    >
+                      Send
+                    </Button>
+                  </HStack>
+                </VStack>
+              </ModalBody>
+            </ModalContent>
+          </Modal>
         </>
       ) : (
         <Box

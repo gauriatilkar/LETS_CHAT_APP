@@ -1,7 +1,22 @@
 import React, { useState } from "react";
 import { Avatar } from "@chakra-ui/avatar";
 import { Tooltip } from "@chakra-ui/tooltip";
-import { Box, Text, Button, Badge } from "@chakra-ui/react";
+import {
+  Box,
+  Text,
+  Button,
+  Badge,
+  Image,
+  AspectRatio,
+  Modal,
+  ModalOverlay,
+  ModalContent,
+  ModalBody,
+  ModalCloseButton,
+  useDisclosure,
+  IconButton,
+} from "@chakra-ui/react";
+import { ViewIcon } from "@chakra-ui/icons";
 import ScrollableFeed from "react-scrollable-feed";
 import {
   isLastMessage,
@@ -14,12 +29,139 @@ import { ChatState } from "../Context/ChatProvider";
 const ScrollableChat = ({ messages, onViewOnceClick }) => {
   const { user } = ChatState();
   const [viewedMessages, setViewedMessages] = useState(new Set());
+  const { isOpen, onOpen, onClose } = useDisclosure();
+  const [selectedMedia, setSelectedMedia] = useState(null);
+  const [selectedMediaType, setSelectedMediaType] = useState(null);
 
   const handleViewOnceClick = async (messageId) => {
     if (onViewOnceClick) {
       await onViewOnceClick(messageId);
       setViewedMessages((prev) => new Set([...prev, messageId]));
     }
+  };
+
+  // Function to open media in full screen modal
+  const openMediaModal = (content, mediaType) => {
+    setSelectedMedia(content);
+    setSelectedMediaType(mediaType);
+    onOpen();
+  };
+
+  // Function to check if the content is a Cloudinary URL
+  const isCloudinaryUrl = (content) => {
+    return content && content.includes("cloudinary.com");
+  };
+
+  // Function to determine if it's an image or video URL
+  const getMediaTypeFromUrl = (url) => {
+    if (!url) return "text";
+    const videoExtensions = [".mp4", ".webm", ".ogg", ".mov", ".avi"];
+    const imageExtensions = [".jpg", ".jpeg", ".png", ".gif", ".webp"];
+
+    const urlLower = url.toLowerCase();
+
+    if (videoExtensions.some((ext) => urlLower.includes(ext))) {
+      return "video";
+    } else if (imageExtensions.some((ext) => urlLower.includes(ext))) {
+      return "image";
+    } else if (urlLower.includes("/video/")) {
+      return "video";
+    } else if (urlLower.includes("/image/")) {
+      return "image";
+    }
+
+    return "text";
+  };
+
+  const renderMessageContent = (message) => {
+    const { content, mediaType } = message;
+
+    // If it's a media message or Cloudinary URL
+    if ((mediaType && mediaType !== "text") || isCloudinaryUrl(content)) {
+      const actualMediaType = mediaType || getMediaTypeFromUrl(content);
+
+      if (actualMediaType === "image") {
+        return (
+          <Box
+            position="relative"
+            cursor="pointer"
+            onClick={() => openMediaModal(content, "image")}
+          >
+            <Image
+              src={content}
+              alt="Shared image"
+              maxW="300px"
+              maxH="200px"
+              minW="200px"
+              minH="150px"
+              borderRadius="12px"
+              objectFit="cover"
+              transition="all 0.2s"
+              _hover={{
+                transform: "scale(1.02)",
+                boxShadow: "lg",
+              }}
+              fallback={
+                <Text fontSize="sm" color="gray.500">
+                  Image failed to load
+                </Text>
+              }
+            />
+            <Box
+              position="absolute"
+              top="4px"
+              right="4px"
+              bg="blackAlpha.600"
+              borderRadius="full"
+              p="1"
+            >
+              <ViewIcon color="white" boxSize="12px" />
+            </Box>
+          </Box>
+        );
+      } else if (actualMediaType === "video") {
+        return (
+          <Box position="relative">
+            <AspectRatio ratio={16 / 9} maxW="450px" minW="300px">
+              <video
+                src={content}
+                controls
+                preload="metadata"
+                style={{
+                  borderRadius: "12px",
+                  width: "100%",
+                  height: "100%",
+                  objectFit: "cover",
+                  cursor: "pointer",
+                }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                }}
+                onDoubleClick={() => openMediaModal(content, "video")}
+              >
+                Your browser does not support the video tag.
+              </video>
+            </AspectRatio>
+            <IconButton
+              icon={<ViewIcon />}
+              size="sm"
+              position="absolute"
+              top="8px"
+              right="8px"
+              bg="blackAlpha.600"
+              color="white"
+              borderRadius="full"
+              _hover={{ bg: "blackAlpha.800" }}
+              onClick={() => openMediaModal(content, "video")}
+              aria-label="View video in full screen"
+            />
+          </Box>
+        );
+      }
+    }
+
+    // Default text content
+    return <Text>{content}</Text>;
   };
 
   const renderMessage = (m, i) => {
@@ -56,10 +198,17 @@ const ScrollableChat = ({ messages, onViewOnceClick }) => {
             position="relative"
           >
             <Badge colorScheme="purple" size="sm" mb={2}>
-              🔒 View Once
+              🔒 View Once{" "}
+              {m.mediaType && m.mediaType !== "text" ? `(${m.mediaType})` : ""}
             </Badge>
             <Text fontSize="sm" color="purple.600" mb={2}>
-              Tap to view this message once
+              Tap to view this{" "}
+              {m.mediaType === "image"
+                ? "photo"
+                : m.mediaType === "video"
+                ? "video"
+                : "message"}{" "}
+              once
             </Text>
             <Button
               size="sm"
@@ -68,7 +217,12 @@ const ScrollableChat = ({ messages, onViewOnceClick }) => {
               onClick={() => handleViewOnceClick(m._id)}
               borderRadius="full"
             >
-              👁️ View Message
+              👁️ View{" "}
+              {m.mediaType === "image"
+                ? "Photo"
+                : m.mediaType === "video"
+                ? "Video"
+                : "Message"}
             </Button>
           </Box>
         </div>
@@ -97,23 +251,26 @@ const ScrollableChat = ({ messages, onViewOnceClick }) => {
             bg={isCurrentUser ? "#E6FFFA" : "#F7FAFC"}
             borderRadius="20px"
             p={3}
-            maxWidth="75%"
+            maxWidth="65%"
             marginLeft={isSameSenderMargin(messages, m, i, user._id)}
             marginTop={isSameUser(messages, m, i, user._id) ? 3 : 10}
             opacity={0.8}
             position="relative"
           >
             <Badge colorScheme="gray" size="sm" mb={2}>
-              🔓 {isCurrentUser ? "Sent as View Once" : "Viewed Once"}
+              🔓 {isCurrentUser ? "Sent as View Once" : "Viewed Once"}{" "}
+              {m.mediaType && m.mediaType !== "text" ? `(${m.mediaType})` : ""}
             </Badge>
-            {!isCurrentUser && isViewed && (
-              <Text fontSize="sm" color="gray.600">
-                {m.content}
-              </Text>
-            )}
+            {!isCurrentUser && isViewed && <Box>{renderMessageContent(m)}</Box>}
             {isCurrentUser && (
               <Text fontSize="sm" color="gray.600" fontStyle="italic">
-                View once message sent
+                View once{" "}
+                {m.mediaType === "image"
+                  ? "photo"
+                  : m.mediaType === "video"
+                  ? "video"
+                  : "message"}{" "}
+                sent
               </Text>
             )}
             <Text fontSize="xs" color="gray.400" mt={1}>
@@ -143,12 +300,12 @@ const ScrollableChat = ({ messages, onViewOnceClick }) => {
             />
           </Tooltip>
         )}
-        <span
+        <Box
           style={{
             backgroundImage: `${
               m.sender._id === user._id
                 ? "linear-gradient(to right, hsl(217, 52%, 78%), hsl(224, 58%, 79%))"
-                : "linear-gradient(to right, hsl(120, 69%, 90%), hsl(120, 69%, 85%))"
+                : "linear-gradient(to right, hsl(210, 69%, 90%), hsl(210, 69%, 85%))"
             }`,
             marginLeft: isSameSenderMargin(messages, m, i, user._id),
             marginTop: isSameUser(messages, m, i, user._id) ? 3 : 10,
@@ -173,7 +330,10 @@ const ScrollableChat = ({ messages, onViewOnceClick }) => {
               🔒
             </Badge>
           )}
-          {m.content}
+
+          {/* Render the actual content (text, image, or video) */}
+          {renderMessageContent(m)}
+
           <div
             style={{
               fontSize: "10px",
@@ -187,15 +347,81 @@ const ScrollableChat = ({ messages, onViewOnceClick }) => {
               minute: "2-digit",
             })}
           </div>
-        </span>
+        </Box>
       </div>
     );
   };
 
   return (
-    <ScrollableFeed>
-      {Array.isArray(messages) && messages.map((m, i) => renderMessage(m, i))}
-    </ScrollableFeed>
+    <>
+      <ScrollableFeed>
+        {Array.isArray(messages) && messages.map((m, i) => renderMessage(m, i))}
+      </ScrollableFeed>
+
+      {/* Full Screen Media Modal */}
+      <Modal isOpen={isOpen} onClose={onClose} size="full" isCentered>
+        <ModalOverlay bg="blackAlpha.900" />
+        <ModalContent
+          bg="transparent"
+          boxShadow="none"
+          m={0}
+          maxW="100vw"
+          maxH="100vh"
+        >
+          <ModalCloseButton
+            color="white"
+            size="lg"
+            top="20px"
+            right="20px"
+            zIndex={1000}
+            bg="blackAlpha.600"
+            borderRadius="full"
+            _hover={{ bg: "blackAlpha.800" }}
+          />
+          <ModalBody
+            display="flex"
+            alignItems="center"
+            justifyContent="center"
+            p={0}
+            w="100vw"
+            h="100vh"
+          >
+            {selectedMediaType === "image" ? (
+              <Image
+                src={selectedMedia}
+                alt="Full size image"
+                maxW="95vw"
+                maxH="95vh"
+                objectFit="contain"
+                borderRadius="8px"
+              />
+            ) : selectedMediaType === "video" ? (
+              <Box
+                w="95vw"
+                h="95vh"
+                display="flex"
+                alignItems="center"
+                justifyContent="center"
+              >
+                <video
+                  src={selectedMedia}
+                  controls
+                  autoPlay
+                  style={{
+                    maxWidth: "100%",
+                    maxHeight: "100%",
+                    borderRadius: "8px",
+                    objectFit: "contain",
+                  }}
+                >
+                  Your browser does not support the video tag.
+                </video>
+              </Box>
+            ) : null}
+          </ModalBody>
+        </ModalContent>
+      </Modal>
+    </>
   );
 };
 
