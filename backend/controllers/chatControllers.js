@@ -37,6 +37,7 @@ const accessChat = asyncHandler(async (req, res) => {
       chatName: "sender",
       isGroupChat: false,
       users: [req.user._id, userId],
+      // Don't include inviteLinks for one-to-one chats
     };
 
     try {
@@ -121,6 +122,8 @@ const createGroupChat = asyncHandler(async (req, res) => {
       users: users,
       isGroupChat: true,
       groupAdmin: req.user,
+      // Initialize inviteLinks as empty array for group chats
+      inviteLinks: [],
     });
 
     const fullGroupChat = await Chat.findOne({ _id: groupChat._id })
@@ -242,7 +245,31 @@ const generateInviteLink = asyncHandler(async (req, res) => {
   }
 
   // Generate unique invite code
-  const inviteCode = crypto.randomBytes(16).toString("hex");
+  let inviteCode;
+  let isUnique = false;
+  let attempts = 0;
+  const maxAttempts = 5;
+
+  // Ensure unique invite code by checking against existing codes
+  while (!isUnique && attempts < maxAttempts) {
+    inviteCode = crypto.randomBytes(16).toString("hex");
+
+    // Check if this code already exists in any chat
+    const existingChat = await Chat.findOne({
+      "inviteLinks.inviteCode": inviteCode,
+    });
+
+    if (!existingChat) {
+      isUnique = true;
+    }
+    attempts++;
+  }
+
+  if (!isUnique) {
+    res.status(500);
+    throw new Error("Failed to generate unique invite code");
+  }
+
   const expiresAt = new Date(Date.now() + expiresIn);
 
   const inviteLink = {
@@ -254,22 +281,34 @@ const generateInviteLink = asyncHandler(async (req, res) => {
     isActive: true,
   };
 
-  // Add invite link to chat
-  const updatedChat = await Chat.findByIdAndUpdate(
-    chatId,
-    { $push: { inviteLinks: inviteLink } },
-    { new: true }
-  ).populate("inviteLinks.createdBy", "name pic email");
+  try {
+    // Add invite link to chat - ensure inviteLinks array exists
+    const updatedChat = await Chat.findByIdAndUpdate(
+      chatId,
+      {
+        $push: { inviteLinks: inviteLink },
+        // Ensure inviteLinks field exists
+        $setOnInsert: { inviteLinks: [] },
+      },
+      { new: true, upsert: false }
+    ).populate("inviteLinks.createdBy", "name pic email");
 
-  // Get the newly created invite link
-  const newInviteLink =
-    updatedChat.inviteLinks[updatedChat.inviteLinks.length - 1];
+    // Get the newly created invite link
+    const newInviteLink =
+      updatedChat.inviteLinks[updatedChat.inviteLinks.length - 1];
 
-  res.status(201).json({
-    success: true,
-    message: "Invite link generated successfully",
-    inviteLink: newInviteLink,
-  });
+    res.status(201).json({
+      success: true,
+      message: "Invite link generated successfully",
+      inviteLink: newInviteLink,
+    });
+  } catch (error) {
+    if (error.code === 11000) {
+      res.status(400);
+      throw new Error("Duplicate invite code. Please try again.");
+    }
+    throw error;
+  }
 });
 
 // @desc    Join group using invite link
@@ -371,6 +410,15 @@ const getInviteLinks = asyncHandler(async (req, res) => {
   if (!chat.users.includes(req.user._id)) {
     res.status(403);
     throw new Error("You are not a member of this group");
+  }
+
+  // Handle case where inviteLinks doesn't exist
+  if (!chat.inviteLinks) {
+    res.status(200).json({
+      success: true,
+      inviteLinks: [],
+    });
+    return;
   }
 
   // Filter active invite links and remove expired ones
