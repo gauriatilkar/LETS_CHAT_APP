@@ -32,6 +32,7 @@ import { ArrowBackIcon, LockIcon, AttachmentIcon } from "@chakra-ui/icons";
 import { FiImage, FiVideo, FiCamera } from "react-icons/fi";
 import ProfileModal from "./miscellaneous/ProfileModal";
 import ScrollableChat from "./ScrollableChat";
+import WhatsAppReply from "./ReplyPreview";
 import Lottie from "react-lottie";
 import animationData from "../animations/typing.json";
 import EmojiPicker from "emoji-picker-react";
@@ -53,6 +54,9 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
   const [istyping, setIsTyping] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [isViewOnceEnabled, setIsViewOnceEnabled] = useState(false);
+
+  // Reply functionality
+  const [replyMessage, setReplyMessage] = useState(null);
 
   // Media handling states
   const [selectedMedia, setSelectedMedia] = useState(null);
@@ -113,6 +117,21 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
     }
   };
 
+  // Mark messages as read
+  const markAllMessagesAsRead = async (chatId) => {
+    try {
+      const config = {
+        headers: {
+          Authorization: `Bearer ${user.token}`,
+        },
+      };
+
+      await axios.put(`${API_URL}/api/message/read-all/${chatId}`, {}, config);
+    } catch (error) {
+      console.log("Error marking messages as read:", error);
+    }
+  };
+
   // Helper function to check if text contains only emojis
   const isOnlyEmojis = (text) => {
     const emojiRegex =
@@ -120,6 +139,61 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
     return emojiRegex.test(text.trim());
   };
 
+  // Handle reply functionality
+  const handleReply = (message) => {
+    setReplyMessage(message);
+    if (textareaRef.current) {
+      textareaRef.current.focus();
+    }
+  };
+
+  const handleClearReply = () => {
+    setReplyMessage(null);
+  };
+
+  // Update the handleMessageUpdate function in SingleChat component
+  const handleMessageUpdate = (updatedMessage) => {
+    setMessages((prevMessages) =>
+      prevMessages.map((msg) =>
+        msg._id === updatedMessage._id ? updatedMessage : msg
+      )
+    );
+
+    // Emit socket event for real-time updates
+    socket.emit("message updated", {
+      chatId: selectedChat._id,
+      message: updatedMessage,
+    });
+  };
+
+  // Update the handleMessageDelete function in SingleChat component
+  const handleMessageDelete = (messageId, deleteFor) => {
+    setMessages((prevMessages) => {
+      if (deleteFor === "sender") {
+        // Remove message for sender only
+        return prevMessages.filter((msg) => msg._id !== messageId);
+      } else {
+        // Mark as deleted for everyone
+        return prevMessages.map((msg) =>
+          msg._id === messageId
+            ? {
+                ...msg,
+                isDeleted: true,
+                deleteType: "everyone",
+                content: "This message was deleted",
+              }
+            : msg
+        );
+      }
+    });
+
+    // Emit socket event for real-time updates
+    socket.emit("message deleted", {
+      chatId: selectedChat._id,
+      messageId,
+      deleteFor,
+    });
+  };
   // Handle file selection
   const handleFileSelect = (event) => {
     const file = event.target.files[0];
@@ -238,10 +312,11 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
       const { data } = await axios.post(
         `${API_URL}/api/message`,
         {
-          content: mediaUrl, // Store the Cloudinary URL as content
+          content: mediaUrl,
           chatId: selectedChat._id,
           isViewOnce: isViewOnceEnabled,
-          mediaType: mediaType, // Add media type to distinguish from text
+          mediaType: mediaType,
+          replyTo: replyMessage?._id || null,
         },
         config
       );
@@ -256,6 +331,7 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
       setMediaType(null);
       setIsViewOnceEnabled(false);
       setUploadProgress(0);
+      setReplyMessage(null);
       onClose();
 
       toast({
@@ -312,14 +388,17 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
 
         setNewMessage("");
         setIsViewOnceEnabled(false);
+        const currentReplyId = replyMessage?._id;
+        setReplyMessage(null);
 
         const { data } = await axios.post(
           `${API_URL}/api/message`,
           {
             content: messageContent,
-            chatId: selectedChat,
+            chatId: selectedChat._id,
             isViewOnce: isViewOnce,
-            isOnlyEmojis: onlyEmojis, // Add this field to identify emoji-only messages
+            isOnlyEmojis: onlyEmojis,
+            replyTo: currentReplyId || null,
           },
           config
         );
@@ -456,6 +535,7 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
     socket.on("typing", () => setIsTyping(true));
     socket.on("stop typing", () => setIsTyping(false));
 
+    // Socket event for view once messages
     socket.on("message viewed", ({ messageId, userId }) => {
       if (userId !== user._id) {
         setMessages((prevMessages) =>
@@ -478,16 +558,76 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
       }
     });
 
+    // Socket event for message updates (edit)
+    socket.on("message updated", ({ message: updatedMessage }) => {
+      setMessages((prevMessages) =>
+        prevMessages.map((msg) =>
+          msg._id === updatedMessage._id ? updatedMessage : msg
+        )
+      );
+    });
+
+    // Socket event for message deletions
+    socket.on("message deleted", ({ messageId, deleteFor }) => {
+      setMessages((prevMessages) => {
+        if (deleteFor === "everyone") {
+          return prevMessages.map((msg) =>
+            msg._id === messageId
+              ? {
+                  ...msg,
+                  isDeleted: true,
+                  deleteType: "everyone",
+                  content: "This message was deleted",
+                }
+              : msg
+          );
+        }
+        return prevMessages;
+      });
+    });
+
+    // Socket event for read receipts
+    socket.on("message read", ({ messageId, userId, readAt }) => {
+      setMessages((prevMessages) =>
+        prevMessages.map((msg) => {
+          if (msg._id === messageId) {
+            const existingRead = msg.readBy?.find(
+              (read) => read.user._id === userId
+            );
+            if (!existingRead) {
+              return {
+                ...msg,
+                readBy: [
+                  ...(msg.readBy || []),
+                  {
+                    user: { _id: userId },
+                    readAt: readAt,
+                  },
+                ],
+              };
+            }
+          }
+          return msg;
+        })
+      );
+    });
+
     return () => {
       socket.off("connected");
       socket.off("typing");
       socket.off("stop typing");
       socket.off("message viewed");
+      socket.off("message updated");
+      socket.off("message deleted");
+      socket.off("message read");
     };
   }, [user]);
 
   useEffect(() => {
-    fetchMessages();
+    if (selectedChat) {
+      fetchMessages();
+      markAllMessagesAsRead(selectedChat._id);
+    }
     selectedChatCompare = selectedChat;
   }, [selectedChat]);
 
@@ -592,6 +732,10 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
                 <ScrollableChat
                   messages={messages}
                   onViewOnceClick={handleViewOnceMessage}
+                  onReply={handleReply}
+                  onMessageUpdate={handleMessageUpdate}
+                  onMessageDelete={handleMessageDelete}
+                  selectedChat={selectedChat}
                 />
               </div>
             )}
@@ -605,6 +749,14 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
                     style={{ marginBottom: 15, marginLeft: 0 }}
                   />
                 </div>
+              )}
+
+              {/* Reply Preview */}
+              {replyMessage && (
+                <WhatsAppReply
+                  replyMessage={replyMessage}
+                  onClose={handleClearReply}
+                />
               )}
 
               {isViewOnceEnabled && (
@@ -700,7 +852,6 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
                         leftIcon={<FiImage />}
                         variant="ghost"
                         justifyContent="flex-start"
-                        w="100%"
                         onClick={() => {
                           fileInputRef.current.accept = "image/*";
                           fileInputRef.current.click();
@@ -779,21 +930,41 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
                   variant="filled"
                   bg="white"
                   placeholder={
-                    isViewOnceEnabled
+                    replyMessage
+                      ? `Replying to ${replyMessage.sender.name}...`
+                      : isViewOnceEnabled
                       ? "Type your disappearing message..."
-                      : "Type a message... "
+                      : "Type a message..."
                   }
                   value={newMessage}
                   onChange={typingHandler}
                   onKeyDown={sendMessage}
-                  borderColor={isViewOnceEnabled ? "purple.200" : "#D1D5DB"}
+                  borderColor={
+                    replyMessage
+                      ? "blue.200"
+                      : isViewOnceEnabled
+                      ? "purple.200"
+                      : "#D1D5DB"
+                  }
                   _hover={{
-                    borderColor: isViewOnceEnabled ? "purple.300" : "#A0AEC0",
+                    borderColor: replyMessage
+                      ? "blue.300"
+                      : isViewOnceEnabled
+                      ? "purple.300"
+                      : "#A0AEC0",
                   }}
                   _focus={{
-                    borderColor: isViewOnceEnabled ? "purple.400" : "blue.400",
+                    borderColor: replyMessage
+                      ? "blue.400"
+                      : isViewOnceEnabled
+                      ? "purple.400"
+                      : "blue.400",
                     boxShadow: `0 0 5px ${
-                      isViewOnceEnabled ? "purple.400" : "blue.400"
+                      replyMessage
+                        ? "blue.400"
+                        : isViewOnceEnabled
+                        ? "purple.400"
+                        : "blue.400"
                     }`,
                   }}
                   borderRadius="lg"
@@ -809,14 +980,24 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
                 />
 
                 <IconButton
-                  colorScheme={isViewOnceEnabled ? "purple" : "blue"}
+                  colorScheme={
+                    replyMessage
+                      ? "blue"
+                      : isViewOnceEnabled
+                      ? "purple"
+                      : "blue"
+                  }
                   aria-label="Send message"
                   icon={<ArrowBackIcon transform="rotate(90deg)" />}
                   onClick={handleSendMessage}
                   isDisabled={!newMessage.trim()}
                   borderRadius="full"
                   _hover={{
-                    bg: isViewOnceEnabled ? "purple.600" : "blue.600",
+                    bg: replyMessage
+                      ? "blue.600"
+                      : isViewOnceEnabled
+                      ? "purple.600"
+                      : "blue.600",
                   }}
                   boxShadow="base"
                   size="md"
@@ -838,6 +1019,11 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
                         View Once 🔒
                       </Badge>
                     )}
+                    {replyMessage && (
+                      <Badge ml={2} colorScheme="blue">
+                        Reply
+                      </Badge>
+                    )}
                   </Text>
                   <CloseButton onClick={closeMediaPreview} />
                 </Flex>
@@ -845,6 +1031,14 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
 
               <ModalBody pb={6}>
                 <VStack spacing={4}>
+                  {/* Reply Preview in Modal */}
+                  {replyMessage && (
+                    <WhatsAppReply
+                      replyMessage={replyMessage}
+                      onClose={handleClearReply}
+                    />
+                  )}
+
                   {/* Media Preview */}
                   <Box
                     w="100%"

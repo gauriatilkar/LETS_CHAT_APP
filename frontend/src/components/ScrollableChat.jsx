@@ -15,8 +15,12 @@ import {
   ModalCloseButton,
   useDisclosure,
   IconButton,
+  HStack,
+  VStack,
+  useToast,
+  Textarea,
 } from "@chakra-ui/react";
-import { ViewIcon } from "@chakra-ui/icons";
+import { ViewIcon, CheckIcon, CloseIcon } from "@chakra-ui/icons";
 import ScrollableFeed from "react-scrollable-feed";
 import {
   isLastMessage,
@@ -25,13 +29,146 @@ import {
   isSameUser,
 } from "../config/ChatLogics";
 import { ChatState } from "../Context/ChatProvider";
+import MessageContextMenu from "./MessageContextMenu";
+import WhatsAppReply from "./ReplyPreview";
+import ReadReceiptIndicator from "./ReadReceiptIndicator";
+import axios from "axios";
 
-const ScrollableChat = ({ messages, onViewOnceClick }) => {
+const ScrollableChat = ({
+  messages,
+  onViewOnceClick,
+  onReply,
+  onMessageUpdate,
+  onMessageDelete,
+  selectedChat,
+}) => {
   const { user } = ChatState();
   const [viewedMessages, setViewedMessages] = useState(new Set());
+  const [editingMessageId, setEditingMessageId] = useState(null);
+  const [editContent, setEditContent] = useState("");
+  const [isEditingLoading, setIsEditingLoading] = useState(false);
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [messageToDelete, setMessageToDelete] = useState(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
   const { isOpen, onOpen, onClose } = useDisclosure();
   const [selectedMedia, setSelectedMedia] = useState(null);
   const [selectedMediaType, setSelectedMediaType] = useState(null);
+  const toast = useToast();
+
+  const API_URL = import.meta.env.VITE_BACKEND_URL;
+
+  // Inline editing functions
+  const handleStartEdit = (message) => {
+    setEditingMessageId(message._id);
+    setEditContent(message.content);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editContent.trim()) {
+      toast({
+        title: "Message cannot be empty",
+        status: "warning",
+        duration: 3000,
+        isClosable: true,
+      });
+      return;
+    }
+
+    if (
+      editContent.trim() ===
+      messages.find((m) => m._id === editingMessageId)?.content
+    ) {
+      setEditingMessageId(null);
+      return;
+    }
+
+    setIsEditingLoading(true);
+    try {
+      const config = {
+        headers: {
+          Authorization: `Bearer ${user.token}`,
+          "Content-Type": "application/json",
+        },
+      };
+
+      const { data } = await axios.put(
+        `${API_URL}/api/message/edit/${editingMessageId}`,
+        { content: editContent.trim() },
+        config
+      );
+
+      onMessageUpdate(data);
+      setEditingMessageId(null);
+      toast({
+        title: "Message edited successfully",
+        status: "success",
+        duration: 2000,
+        isClosable: true,
+      });
+    } catch (error) {
+      toast({
+        title: "Error editing message",
+        description: error.response?.data?.message || "Something went wrong",
+        status: "error",
+        duration: 5000,
+        isClosable: true,
+      });
+    }
+    setIsEditingLoading(false);
+  };
+
+  const handleCancelEdit = () => {
+    setEditingMessageId(null);
+    setEditContent("");
+  };
+
+  // Delete modal functions
+  const handleDeleteClick = (message) => {
+    setMessageToDelete(message);
+    setDeleteModalOpen(true);
+  };
+
+  const handleDelete = async (deleteFor) => {
+    setDeleteLoading(true);
+    try {
+      const config = {
+        headers: {
+          Authorization: `Bearer ${user.token}`,
+          "Content-Type": "application/json",
+        },
+      };
+
+      await axios.delete(
+        `${API_URL}/api/message/delete/${messageToDelete._id}`,
+        {
+          ...config,
+          data: { deleteFor },
+        }
+      );
+
+      onMessageDelete(messageToDelete._id, deleteFor);
+      setDeleteModalOpen(false);
+      setMessageToDelete(null);
+
+      toast({
+        title: `Message deleted ${
+          deleteFor === "everyone" ? "for everyone" : "for you"
+        }`,
+        status: "success",
+        duration: 3000,
+        isClosable: true,
+      });
+    } catch (error) {
+      toast({
+        title: "Error deleting message",
+        description: error.response?.data?.message || "Something went wrong",
+        status: "error",
+        duration: 5000,
+        isClosable: true,
+      });
+    }
+    setDeleteLoading(false);
+  };
 
   const handleViewOnceClick = async (messageId) => {
     if (onViewOnceClick) {
@@ -85,11 +222,9 @@ const ScrollableChat = ({ messages, onViewOnceClick }) => {
   const enhanceEmojisInText = (text) => {
     if (!text || typeof text !== "string") return text;
 
-    // Regular expression to match emojis
     const emojiRegex =
       /(\p{Emoji_Presentation}|\p{Emoji}\uFE0F|\p{Emoji_Modifier_Base})/gu;
 
-    // Split text by emojis and wrap emojis in spans
     const parts = text.split(emojiRegex);
 
     return parts.map((part, index) => {
@@ -113,7 +248,70 @@ const ScrollableChat = ({ messages, onViewOnceClick }) => {
   };
 
   const renderMessageContent = (message) => {
-    const { content, mediaType, isOnlyEmojis: messageIsOnlyEmojis } = message;
+    const {
+      content,
+      mediaType,
+      isOnlyEmojis: messageIsOnlyEmojis,
+      isDeleted,
+      deleteType,
+    } = message;
+
+    // Show deleted message placeholder
+    if (isDeleted && deleteType === "everyone") {
+      return (
+        <Text fontSize="sm" color="gray.500" fontStyle="italic">
+          🚫 This message was deleted
+        </Text>
+      );
+    }
+
+    // If message is being edited
+    if (editingMessageId === message._id) {
+      return (
+        <HStack spacing={2} align="flex-start" w="100%">
+          <Textarea
+            value={editContent}
+            onChange={(e) => setEditContent(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                handleSaveEdit();
+              } else if (e.key === "Escape") {
+                handleCancelEdit();
+              }
+            }}
+            size="sm"
+            bg="rgba(255,255,255,0.9)"
+            borderColor="blue.300"
+            _focus={{ borderColor: "blue.400" }}
+            resize="none"
+            minH="40px"
+            maxH="120px"
+            fontSize="14px"
+            fontFamily="'Poppins', sans-serif"
+            placeholder="Edit your message..."
+            autoFocus
+          />
+          <VStack spacing={1}>
+            <IconButton
+              icon={<CheckIcon />}
+              size="sm"
+              colorScheme="green"
+              onClick={handleSaveEdit}
+              isLoading={isEditingLoading}
+              aria-label="Save edit"
+            />
+            <IconButton
+              icon={<CloseIcon />}
+              size="sm"
+              variant="ghost"
+              onClick={handleCancelEdit}
+              aria-label="Cancel edit"
+            />
+          </VStack>
+        </HStack>
+      );
+    }
 
     // If it's a media message or Cloudinary URL
     if ((mediaType && mediaType !== "text") || isCloudinaryUrl(content)) {
@@ -204,7 +402,6 @@ const ScrollableChat = ({ messages, onViewOnceClick }) => {
 
     // Render text content with proper styling for emojis and line breaks
     if (onlyEmojis) {
-      // For emoji-only messages, use large size
       return (
         <Text
           fontSize="2.5rem"
@@ -217,7 +414,6 @@ const ScrollableChat = ({ messages, onViewOnceClick }) => {
         </Text>
       );
     } else {
-      // For mixed content, enhance emojis within the text
       return (
         <Text
           fontSize="14px"
@@ -232,11 +428,28 @@ const ScrollableChat = ({ messages, onViewOnceClick }) => {
     }
   };
 
+  const handleReply = (message) => {
+    onReply(message);
+  };
+
+  const handleEdit = (message) => {
+    handleStartEdit(message);
+  };
+
+  const handleDeleteFromMenu = (message) => {
+    handleDeleteClick(message);
+  };
+
   const renderMessage = (m, i) => {
     const isCurrentUser = m.sender._id === user._id;
     const isViewed = viewedMessages.has(m._id) || m.hasBeenViewed;
     const hasViewedBy = m.viewedBy && m.viewedBy.length > 0;
     const onlyEmojis = m.isOnlyEmojis || isOnlyEmojis(m.content);
+
+    // Don't render messages deleted by sender for the sender
+    if (m.deletedBySender && isCurrentUser) {
+      return null;
+    }
 
     // If it's a view-once message and hasn't been viewed yet by current user
     if (m.isViewOnce && !isViewed && !isCurrentUser && !hasViewedBy) {
@@ -266,10 +479,6 @@ const ScrollableChat = ({ messages, onViewOnceClick }) => {
             marginTop={isSameUser(messages, m, i, user._id) ? 3 : 10}
             position="relative"
           >
-            <Badge colorScheme="purple" size="sm" mb={2}>
-              🔒 View Once{" "}
-              {m.mediaType && m.mediaType !== "text" ? `(${m.mediaType})` : ""}
-            </Badge>
             <Text fontSize="sm" color="purple.600" mb={2}>
               Tap to view this{" "}
               {m.mediaType === "image"
@@ -326,10 +535,6 @@ const ScrollableChat = ({ messages, onViewOnceClick }) => {
             opacity={0.8}
             position="relative"
           >
-            <Badge colorScheme="gray" size="sm" mb={2}>
-              🔓 {isCurrentUser ? "Sent as View Once" : "Viewed Once"}{" "}
-              {m.mediaType && m.mediaType !== "text" ? `(${m.mediaType})` : ""}
-            </Badge>
             {!isCurrentUser && isViewed && <Box>{renderMessageContent(m)}</Box>}
             {isCurrentUser && (
               <Text fontSize="sm" color="gray.600" fontStyle="italic">
@@ -355,7 +560,11 @@ const ScrollableChat = ({ messages, onViewOnceClick }) => {
 
     // Regular message rendering
     return (
-      <div style={{ display: "flex", marginBottom: "10px" }} key={m._id}>
+      <div
+        style={{ display: "flex", marginBottom: "10px" }}
+        key={m._id}
+        role="group"
+      >
         {(isSameSender(messages, m, i, user._id) ||
           isLastMessage(messages, i, user._id)) && (
           <Tooltip label={m.sender.name} placement="bottom-start" hasArrow>
@@ -371,7 +580,6 @@ const ScrollableChat = ({ messages, onViewOnceClick }) => {
         )}
         <Box
           style={{
-            // Only apply background for non-emoji-only messages
             backgroundImage: onlyEmojis
               ? "none"
               : `${
@@ -391,6 +599,16 @@ const ScrollableChat = ({ messages, onViewOnceClick }) => {
             boxShadow: onlyEmojis ? "none" : "sm",
           }}
         >
+          {/* Message Context Menu */}
+          <MessageContextMenu
+            message={m}
+            currentUser={user}
+            onReply={handleReply}
+            onEdit={handleEdit}
+            onDelete={handleDeleteFromMenu}
+            chatUsers={selectedChat?.users || []}
+          />
+
           {m.isViewOnce && m.sender._id === user._id && !onlyEmojis && (
             <Badge
               colorScheme="purple"
@@ -405,10 +623,15 @@ const ScrollableChat = ({ messages, onViewOnceClick }) => {
             </Badge>
           )}
 
-          {/* Render the actual content (text, image, or video) */}
+          {/* WhatsApp Style Reply Indicator */}
+          {m.replyTo && (
+            <WhatsAppReply replyTo={m.replyTo} currentUser={user} />
+          )}
+
+          {/* Message Content - either editable or display */}
           {renderMessageContent(m)}
 
-          {/* Only show timestamp for non-emoji-only messages */}
+          {/* Only show timestamp and read receipts for non-emoji-only messages */}
           {!onlyEmojis && (
             <div
               style={{
@@ -416,12 +639,34 @@ const ScrollableChat = ({ messages, onViewOnceClick }) => {
                 color: "rgba(0,0,0,0.5)",
                 marginTop: "2px",
                 textAlign: "right",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "flex-end",
+                gap: "4px",
               }}
             >
-              {new Date(m.createdAt).toLocaleTimeString([], {
-                hour: "2-digit",
-                minute: "2-digit",
-              })}
+              <span>
+                {new Date(m.createdAt).toLocaleTimeString([], {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}
+              </span>
+
+              {/* Show read receipts for sent messages */}
+              {m.sender._id === user._id && (
+                <ReadReceiptIndicator
+                  message={m}
+                  chatUsers={selectedChat?.users || []}
+                  currentUser={user}
+                />
+              )}
+
+              {/* Show edited indicator */}
+              {m.isEdited && (
+                <span style={{ fontStyle: "italic", fontSize: "9px" }}>
+                  edited
+                </span>
+              )}
             </div>
           )}
         </Box>
@@ -431,9 +676,81 @@ const ScrollableChat = ({ messages, onViewOnceClick }) => {
 
   return (
     <>
-      <ScrollableFeed>
-        {Array.isArray(messages) && messages.map((m, i) => renderMessage(m, i))}
-      </ScrollableFeed>
+      <Box
+        w="100%"
+        h="100%"
+        overflowY="auto"
+        overflowX="hidden"
+        css={{
+          "&::-webkit-scrollbar": {
+            display: "none",
+          },
+          "&::-webkit-scrollbar-track": {
+            display: "none",
+          },
+          "&::-webkit-scrollbar-thumb": {
+            display: "none",
+          },
+          "&::-webkit-scrollbar-horizontal": {
+            display: "none",
+          },
+          "-ms-overflow-style": "none",
+          "scrollbar-width": "none",
+        }}
+      >
+        <ScrollableFeed
+          style={{
+            width: "100%",
+            overflowX: "hidden",
+            overflowY: "auto",
+          }}
+          className="scrollable-feed"
+        >
+          {Array.isArray(messages) &&
+            messages.map((m, i) => renderMessage(m, i))}
+        </ScrollableFeed>
+      </Box>
+
+      {/* Delete Confirmation Modal */}
+      <Modal isOpen={deleteModalOpen} onClose={() => setDeleteModalOpen(false)}>
+        <ModalOverlay />
+        <ModalContent>
+          <Box p={6}>
+            <Text fontSize="lg" fontWeight="bold" mb={4}>
+              Delete Message
+            </Text>
+            <Text mb={4} color="gray.600">
+              Are you sure you want to delete this message?
+            </Text>
+            <VStack spacing={3}>
+              <Button
+                w="100%"
+                variant="outline"
+                colorScheme="red"
+                onClick={() => handleDelete("sender")}
+                isLoading={deleteLoading}
+              >
+                Delete for me
+              </Button>
+              <Button
+                w="100%"
+                colorScheme="red"
+                onClick={() => handleDelete("everyone")}
+                isLoading={deleteLoading}
+              >
+                Delete for everyone
+              </Button>
+              <Button
+                w="100%"
+                variant="ghost"
+                onClick={() => setDeleteModalOpen(false)}
+              >
+                Cancel
+              </Button>
+            </VStack>
+          </Box>
+        </ModalContent>
+      </Modal>
 
       {/* Full Screen Media Modal */}
       <Modal isOpen={isOpen} onClose={onClose} size="full" isCentered>

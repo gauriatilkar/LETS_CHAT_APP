@@ -10,16 +10,35 @@ const allMessages = asyncHandler(async (req, res) => {
   try {
     const messages = await Message.find({
       chat: req.params.chatId,
-      // Only show messages that haven't been deleted due to view-once
-      isDeleted: { $ne: true },
+      // Only show messages that haven't been deleted for everyone
+      $or: [
+        { isDeleted: false },
+        {
+          isDeleted: true,
+          deleteType: "sender",
+          sender: { $ne: req.user._id },
+        },
+      ],
+      // Don't show messages deleted by sender to the sender
+      $or: [
+        { deletedBySender: false },
+        { deletedBySender: true, sender: { $ne: req.user._id } },
+      ],
     })
       .populate("sender", "name pic email")
-      .populate("chat");
+      .populate("chat")
+      .populate({
+        path: "replyTo",
+        populate: {
+          path: "sender",
+          select: "name pic email",
+        },
+      });
 
     // Filter out view-once messages that have been viewed by current user
     const filteredMessages = messages.filter((message) => {
       if (message.isViewOnce && message.viewedBy.includes(req.user._id)) {
-        return false; // Don't show if already viewed by current user
+        return false;
       }
       return true;
     });
@@ -35,7 +54,14 @@ const allMessages = asyncHandler(async (req, res) => {
 //@route           POST /api/Message/
 //@access          Protected
 const sendMessage = asyncHandler(async (req, res) => {
-  const { content, chatId, isViewOnce = false, mediaType = "text" } = req.body;
+  const {
+    content,
+    chatId,
+    isViewOnce = false,
+    mediaType = "text",
+    isOnlyEmojis = false,
+    replyTo = null,
+  } = req.body;
 
   if (!content || !chatId) {
     console.log("Invalid data passed into request");
@@ -47,9 +73,11 @@ const sendMessage = asyncHandler(async (req, res) => {
     content: content,
     chat: chatId,
     isViewOnce: isViewOnce,
-    viewedBy: [], // Track who has viewed this message
+    viewedBy: [],
     isDeleted: false,
-    mediaType: mediaType, // Store the media type (text, image, video)
+    mediaType: mediaType,
+    isOnlyEmojis: isOnlyEmojis,
+    replyTo: replyTo, // Add reply reference
   };
 
   try {
@@ -57,6 +85,13 @@ const sendMessage = asyncHandler(async (req, res) => {
 
     message = await message.populate("sender", "name pic");
     message = await message.populate("chat");
+    message = await message.populate({
+      path: "replyTo",
+      populate: {
+        path: "sender",
+        select: "name pic email",
+      },
+    });
     message = await User.populate(message, {
       path: "chat.users",
       select: "name pic email",
@@ -68,6 +103,111 @@ const sendMessage = asyncHandler(async (req, res) => {
   } catch (error) {
     res.status(400);
     throw new Error(error.message);
+  }
+});
+
+//@description     Edit Message (only by sender, within 15 minutes)
+//@route           PUT /api/Message/edit/:messageId
+//@access          Protected
+const editMessage = asyncHandler(async (req, res) => {
+  try {
+    const { messageId } = req.params;
+    const { content } = req.body;
+    const userId = req.user._id;
+
+    if (!content || content.trim() === "") {
+      res.status(400);
+      throw new Error("Message content cannot be empty");
+    }
+
+    const message = await Message.findById(messageId);
+
+    if (!message) {
+      res.status(404);
+      throw new Error("Message not found");
+    }
+
+    // Add chat ID check and fetch
+    const chat = await Chat.findById(message.chat);
+    if (!chat) {
+      res.status(404);
+      throw new Error("Chat not found");
+    }
+
+    // Update message
+    message.content = content.trim();
+    message.isEdited = true;
+    message.editedAt = new Date();
+
+    await message.save();
+
+    // Emit socket event
+    req.io.to(chat._id.toString()).emit("message updated", {
+      chatId: chat._id,
+      message: message,
+    });
+
+    res.json(message);
+  } catch (error) {
+    res.status(400);
+    throw new Error(error.message);
+  }
+});
+
+//@description     Delete Message (only by sender)
+//@route           DELETE /api/Message/delete/:messageId
+//@access          Protected
+const deleteMessage = asyncHandler(async (req, res) => {
+  try {
+    const { messageId } = req.params;
+    const userId = req.user._id;
+
+    // Find message and populate chat
+    const message = await Message.findById(messageId)
+      .populate("chat")
+      .populate("sender");
+
+    if (!message) {
+      return res.status(404).json({
+        success: false,
+        message: "Message not found",
+      });
+    }
+
+    // Check ownership
+    if (message.sender._id.toString() !== userId.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: "Not authorized to delete this message",
+      });
+    }
+
+    // Update message
+    message.isDeleted = true;
+    message.deleteType = req.body.deleteFor || "sender";
+    await message.save();
+
+    // Emit socket event
+    if (req.io) {
+      req.io.to(message.chat._id.toString()).emit("message deleted", {
+        messageId: message._id,
+        chatId: message.chat._id,
+        deleteFor: message.deleteType,
+      });
+    }
+
+    return res.json({
+      success: true,
+      messageId: message._id,
+      deleteType: message.deleteType,
+    });
+  } catch (error) {
+    console.error("Delete message error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Error deleting message",
+      error: error.message,
+    });
   }
 });
 
@@ -95,13 +235,13 @@ const getViewOnceMessage = asyncHandler(async (req, res) => {
     }
 
     if (message.isDeleted) {
-      res.status(410); // Gone
+      res.status(410);
       throw new Error("Message has been deleted");
     }
 
     // Check if user has already viewed this message
     if (message.viewedBy.includes(userId)) {
-      res.status(410); // Gone
+      res.status(410);
       throw new Error("Message already viewed by you");
     }
 
@@ -136,7 +276,7 @@ const getViewOnceMessage = asyncHandler(async (req, res) => {
       hasBeenViewed: true,
       viewedBy: message.viewedBy,
       isDeleted: message.isDeleted,
-      mediaType: message.mediaType, // Include media type in response
+      mediaType: message.mediaType,
     });
   } catch (error) {
     res.status(400);
@@ -144,12 +284,54 @@ const getViewOnceMessage = asyncHandler(async (req, res) => {
   }
 });
 
-//@description     Mark View Once Message as Viewed (alternative endpoint)
-//@route           PUT /api/Message/view-once/:messageId
+//@description     Get Message Edit History
+//@route           GET /api/Message/:messageId/history
 //@access          Protected
-const markViewOnceAsViewed = asyncHandler(async (req, res) => {
+const getMessageHistory = asyncHandler(async (req, res) => {
   try {
-    const messageId = req.params.messageId;
+    const { messageId } = req.params;
+    const userId = req.user._id;
+
+    const message = await Message.findById(messageId).populate(
+      "sender",
+      "name pic email"
+    );
+
+    if (!message) {
+      res.status(404);
+      throw new Error("Message not found");
+    }
+
+    // Only sender can view edit history
+    if (message.sender._id.toString() !== userId.toString()) {
+      res.status(403);
+      throw new Error("You can only view history of your own messages");
+    }
+
+    if (!message.isEdited) {
+      res.status(400);
+      throw new Error("This message has not been edited");
+    }
+
+    res.json({
+      messageId: message._id,
+      currentContent: message.content,
+      isEdited: message.isEdited,
+      editedAt: message.editedAt,
+      editHistory: message.editHistory,
+    });
+  } catch (error) {
+    res.status(400);
+    throw new Error(error.message);
+  }
+});
+
+//@description     Mark Message as Read
+//@route           PUT /api/Message/:messageId/read
+//@access          Protected
+const markMessageAsRead = asyncHandler(async (req, res) => {
+  try {
+    const { messageId } = req.params;
     const userId = req.user._id;
 
     const message = await Message.findById(messageId);
@@ -159,40 +341,97 @@ const markViewOnceAsViewed = asyncHandler(async (req, res) => {
       throw new Error("Message not found");
     }
 
-    if (!message.isViewOnce) {
+    // Don't mark own messages as read
+    if (message.sender.toString() === userId.toString()) {
       res.status(400);
-      throw new Error("This is not a view-once message");
+      throw new Error("Cannot mark your own message as read");
     }
 
-    // Check if user has already viewed this message
-    if (message.viewedBy.includes(userId)) {
-      res.status(400);
-      throw new Error("Message already viewed");
-    }
-
-    // Add user to viewedBy array
-    message.viewedBy.push(userId);
-
-    // Get chat to determine if all recipients have viewed
-    const chat = await Chat.findById(message.chat);
-    const recipients = chat.users.filter(
-      (user) => user.toString() !== message.sender._id.toString()
+    // Check if already marked as read by this user
+    const alreadyRead = message.readBy.some(
+      (read) => read.user.toString() === userId.toString()
     );
 
-    // If all recipients have viewed the message, mark it as deleted
-    if (message.viewedBy.length >= recipients.length) {
-      message.isDeleted = true;
+    if (!alreadyRead) {
+      message.readBy.push({
+        user: userId,
+        readAt: new Date(),
+      });
+      await message.save();
     }
 
-    await message.save();
+    res.json({
+      success: true,
+      messageId: message._id,
+      readBy: message.readBy,
+    });
+  } catch (error) {
+    res.status(400);
+    throw new Error(error.message);
+  }
+});
+
+//@description     Mark Multiple Messages as Read (for a chat)
+//@route           PUT /api/Message/read-all/:chatId
+//@access          Protected
+const markAllMessagesAsRead = asyncHandler(async (req, res) => {
+  try {
+    const { chatId } = req.params;
+    const userId = req.user._id;
+
+    // Get all unread messages in the chat that weren't sent by current user
+    const messages = await Message.find({
+      chat: chatId,
+      sender: { $ne: userId },
+      "readBy.user": { $ne: userId },
+    });
+
+    // Mark all messages as read
+    const updatePromises = messages.map((message) => {
+      message.readBy.push({
+        user: userId,
+        readAt: new Date(),
+      });
+      return message.save();
+    });
+
+    await Promise.all(updatePromises);
 
     res.json({
-      message: "Message marked as viewed",
-      isDeleted: message.isDeleted,
-      content: message.isDeleted ? null : message.content,
-      viewedBy: message.viewedBy,
-      mediaType: message.mediaType,
+      success: true,
+      markedCount: messages.length,
+      chatId: chatId,
     });
+  } catch (error) {
+    res.status(400);
+    throw new Error(error.message);
+  }
+});
+
+//@description     Get Read Status for Messages
+//@route           GET /api/Message/read-status/:chatId
+//@access          Protected
+const getReadStatus = asyncHandler(async (req, res) => {
+  try {
+    const { chatId } = req.params;
+    const userId = req.user._id;
+
+    const messages = await Message.find({
+      chat: chatId,
+      sender: userId, // Only get messages sent by current user
+    })
+      .populate("readBy.user", "name pic email")
+      .select("_id content readBy createdAt");
+
+    const readStatus = messages.map((message) => ({
+      messageId: message._id,
+      content: message.content.substring(0, 50), // Preview of content
+      createdAt: message.createdAt,
+      readBy: message.readBy,
+      readCount: message.readBy.length,
+    }));
+
+    res.json(readStatus);
   } catch (error) {
     res.status(400);
     throw new Error(error.message);
@@ -202,6 +441,11 @@ const markViewOnceAsViewed = asyncHandler(async (req, res) => {
 module.exports = {
   allMessages,
   sendMessage,
-  markViewOnceAsViewed,
+  editMessage,
+  deleteMessage,
   getViewOnceMessage,
+  getMessageHistory,
+  markMessageAsRead,
+  markAllMessagesAsRead,
+  getReadStatus,
 };
