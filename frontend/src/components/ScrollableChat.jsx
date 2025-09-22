@@ -40,6 +40,14 @@ const ScrollableChat = ({ messages, onViewOnceClick }) => {
     }
   };
 
+  // Function to check if text contains only emojis
+  const isOnlyEmojis = (text) => {
+    if (!text || typeof text !== "string") return false;
+    const emojiRegex =
+      /^(\p{Emoji_Presentation}|\p{Emoji}\uFE0F|\p{Emoji_Modifier_Base}|\s)+$/gu;
+    return emojiRegex.test(text.trim());
+  };
+
   // Function to open media in full screen modal
   const openMediaModal = (content, mediaType) => {
     setSelectedMedia(content);
@@ -73,8 +81,39 @@ const ScrollableChat = ({ messages, onViewOnceClick }) => {
     return "text";
   };
 
+  // Function to enhance emojis in text content
+  const enhanceEmojisInText = (text) => {
+    if (!text || typeof text !== "string") return text;
+
+    // Regular expression to match emojis
+    const emojiRegex =
+      /(\p{Emoji_Presentation}|\p{Emoji}\uFE0F|\p{Emoji_Modifier_Base})/gu;
+
+    // Split text by emojis and wrap emojis in spans
+    const parts = text.split(emojiRegex);
+
+    return parts.map((part, index) => {
+      if (emojiRegex.test(part)) {
+        return (
+          <span
+            key={index}
+            style={{
+              fontSize: "1.4em",
+              lineHeight: "1.2",
+              display: "inline-block",
+              margin: "0 1px",
+            }}
+          >
+            {part}
+          </span>
+        );
+      }
+      return part;
+    });
+  };
+
   const renderMessageContent = (message) => {
-    const { content, mediaType } = message;
+    const { content, mediaType, isOnlyEmojis: messageIsOnlyEmojis } = message;
 
     // If it's a media message or Cloudinary URL
     if ((mediaType && mediaType !== "text") || isCloudinaryUrl(content)) {
@@ -160,14 +199,44 @@ const ScrollableChat = ({ messages, onViewOnceClick }) => {
       }
     }
 
-    // Default text content
-    return <Text>{content}</Text>;
+    // Check if message contains only emojis
+    const onlyEmojis = messageIsOnlyEmojis || isOnlyEmojis(content);
+
+    // Render text content with proper styling for emojis and line breaks
+    if (onlyEmojis) {
+      // For emoji-only messages, use large size
+      return (
+        <Text
+          fontSize="2.5rem"
+          lineHeight="1.2"
+          whiteSpace="pre-wrap"
+          textAlign="center"
+          py="4px"
+        >
+          {content}
+        </Text>
+      );
+    } else {
+      // For mixed content, enhance emojis within the text
+      return (
+        <Text
+          fontSize="14px"
+          lineHeight="1.4"
+          whiteSpace="pre-wrap"
+          fontFamily="'Poppins', sans-serif"
+          textAlign="left"
+        >
+          {enhanceEmojisInText(content)}
+        </Text>
+      );
+    }
   };
 
   const renderMessage = (m, i) => {
     const isCurrentUser = m.sender._id === user._id;
     const isViewed = viewedMessages.has(m._id) || m.hasBeenViewed;
     const hasViewedBy = m.viewedBy && m.viewedBy.length > 0;
+    const onlyEmojis = m.isOnlyEmojis || isOnlyEmojis(m.content);
 
     // If it's a view-once message and hasn't been viewed yet by current user
     if (m.isViewOnce && !isViewed && !isCurrentUser && !hasViewedBy) {
@@ -302,22 +371,27 @@ const ScrollableChat = ({ messages, onViewOnceClick }) => {
         )}
         <Box
           style={{
-            backgroundImage: `${
-              m.sender._id === user._id
-                ? "linear-gradient(to right, hsl(217, 52%, 78%), hsl(224, 58%, 79%))"
-                : "linear-gradient(to right, hsl(210, 69%, 90%), hsl(210, 69%, 85%))"
-            }`,
+            // Only apply background for non-emoji-only messages
+            backgroundImage: onlyEmojis
+              ? "none"
+              : `${
+                  m.sender._id === user._id
+                    ? "linear-gradient(to right, hsl(217, 52%, 78%), hsl(224, 58%, 79%))"
+                    : "linear-gradient(to right, hsl(210, 69%, 90%), hsl(210, 69%, 85%))"
+                }`,
+            backgroundColor: onlyEmojis ? "transparent" : undefined,
             marginLeft: isSameSenderMargin(messages, m, i, user._id),
             marginTop: isSameUser(messages, m, i, user._id) ? 3 : 10,
-            borderRadius: "20px",
-            padding: "8px 15px",
-            maxWidth: "75%",
+            borderRadius: onlyEmojis ? "0" : "20px",
+            padding: onlyEmojis ? "4px 8px" : "8px 15px",
+            maxWidth: onlyEmojis ? "auto" : "75%",
             position: "relative",
             display: "block",
             wordWrap: "break-word",
+            boxShadow: onlyEmojis ? "none" : "sm",
           }}
         >
-          {m.isViewOnce && m.sender._id === user._id && (
+          {m.isViewOnce && m.sender._id === user._id && !onlyEmojis && (
             <Badge
               colorScheme="purple"
               size="xs"
@@ -334,19 +408,22 @@ const ScrollableChat = ({ messages, onViewOnceClick }) => {
           {/* Render the actual content (text, image, or video) */}
           {renderMessageContent(m)}
 
-          <div
-            style={{
-              fontSize: "10px",
-              color: "rgba(0,0,0,0.5)",
-              marginTop: "2px",
-              textAlign: "right",
-            }}
-          >
-            {new Date(m.createdAt).toLocaleTimeString([], {
-              hour: "2-digit",
-              minute: "2-digit",
-            })}
-          </div>
+          {/* Only show timestamp for non-emoji-only messages */}
+          {!onlyEmojis && (
+            <div
+              style={{
+                fontSize: "10px",
+                color: "rgba(0,0,0,0.5)",
+                marginTop: "2px",
+                textAlign: "right",
+              }}
+            >
+              {new Date(m.createdAt).toLocaleTimeString([], {
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
+            </div>
+          )}
         </Box>
       </div>
     );

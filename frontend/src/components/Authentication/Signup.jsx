@@ -5,24 +5,24 @@ import { Input, InputGroup, InputRightElement } from "@chakra-ui/input";
 import { VStack } from "@chakra-ui/layout";
 import { useToast } from "@chakra-ui/toast";
 import axios from "axios";
-import { useNavigate } from "react-router-dom";  // Corrected import from "react-router-dom"
+import { useNavigate } from "react-router-dom";
 
 const Signup = () => {
   const [show, setShow] = useState(false);
   const handleClick = () => setShow(!show);
   const toast = useToast();
-  
-  const navigate = useNavigate();  // Correct usage of useNavigate
 
-  const [name, setName] = useState("");  // Initialize with an empty string
-  const [email, setEmail] = useState("");  // Initialize with an empty string
-  const [confirmpassword, setConfirmpassword] = useState("");  // Initialize with an empty string
-  const [password, setPassword] = useState("");  // Initialize with an empty string
+  const navigate = useNavigate();
+
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [confirmpassword, setConfirmpassword] = useState("");
+  const [password, setPassword] = useState("");
   const [pic, setPic] = useState("");
   const [picLoading, setPicLoading] = useState(false);
 
-    const API_URL = import.meta.env.VITE_BACKEND_URL;
-    
+  const API_URL = import.meta.env.VITE_BACKEND_URL;
+
   const submitHandler = async () => {
     setPicLoading(true);
     if (!name || !email || !password || !confirmpassword) {
@@ -44,6 +44,7 @@ const Signup = () => {
         isClosable: true,
         position: "bottom",
       });
+      setPicLoading(false);
       return;
     }
     console.log(name, email, password, pic);
@@ -73,7 +74,7 @@ const Signup = () => {
       });
       localStorage.setItem("userInfo", JSON.stringify(data));
       setPicLoading(false);
-      navigate("/chats");  // Corrected use of navigate
+      navigate("/chats");
     } catch (error) {
       toast({
         title: "Error Occurred!",
@@ -87,6 +88,14 @@ const Signup = () => {
     }
   };
 
+  // Handle Enter key press
+  const handleKeyPress = (event) => {
+    if (event.key === "Enter" && !picLoading) {
+      event.preventDefault();
+      submitHandler();
+    }
+  };
+
   const postDetails = (pics) => {
     setPicLoading(true);
     if (pics === undefined) {
@@ -97,13 +106,14 @@ const Signup = () => {
         isClosable: true,
         position: "bottom",
       });
+      setPicLoading(false);
       return;
     }
     if (pics.type === "image/jpeg" || pics.type === "image/png") {
       const data = new FormData();
       data.append("file", pics);
       data.append("upload_preset", "chat-app");
-      data.append("cloud_name", "piyushproj");
+      data.append("cloud_name", "dwdhel37o");
       fetch("https://api.cloudinary.com/v1_1/dwdhel37o/image/upload", {
         method: "post",
         body: data,
@@ -138,6 +148,7 @@ const Signup = () => {
         <Input
           placeholder="Enter Your Name"
           onChange={(e) => setName(e.target.value)}
+          onKeyPress={handleKeyPress}
         />
       </FormControl>
       <FormControl id="emails" isRequired>
@@ -146,6 +157,7 @@ const Signup = () => {
           type="email"
           placeholder="Enter Your Email Address"
           onChange={(e) => setEmail(e.target.value)}
+          onKeyPress={handleKeyPress}
         />
       </FormControl>
       <FormControl id="passwords" isRequired>
@@ -155,6 +167,7 @@ const Signup = () => {
             type={show ? "text" : "password"}
             placeholder="Enter Password"
             onChange={(e) => setPassword(e.target.value)}
+            onKeyPress={handleKeyPress}
           />
           <InputRightElement width="4.5rem">
             <Button h="1.75rem" size="sm" onClick={handleClick}>
@@ -163,13 +176,14 @@ const Signup = () => {
           </InputRightElement>
         </InputGroup>
       </FormControl>
-      <FormControl id="confirm-password" isRequired>  {/* Corrected id */}
+      <FormControl id="confirm-password" isRequired>
         <FormLabel>Confirm Password</FormLabel>
         <InputGroup size="md">
           <Input
             type={show ? "text" : "password"}
             placeholder="Confirm password"
             onChange={(e) => setConfirmpassword(e.target.value)}
+            onKeyPress={handleKeyPress}
           />
           <InputRightElement width="4.5rem">
             <Button h="1.75rem" size="sm" onClick={handleClick}>

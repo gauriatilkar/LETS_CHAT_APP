@@ -1,6 +1,6 @@
 import React from "react";
 import { FormControl } from "@chakra-ui/form-control";
-import { Input } from "@chakra-ui/input";
+import { Textarea } from "@chakra-ui/react";
 import { Box, Text, VStack, HStack, AspectRatio } from "@chakra-ui/layout";
 import { Image } from "@chakra-ui/react";
 import "./styles.css";
@@ -63,6 +63,7 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
   const [showMediaOptions, setShowMediaOptions] = useState(false);
 
   const fileInputRef = useRef();
+  const textareaRef = useRef();
   const { isOpen, onOpen, onClose } = useDisclosure();
   const toast = useToast();
 
@@ -110,6 +111,13 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
         position: "bottom",
       });
     }
+  };
+
+  // Helper function to check if text contains only emojis
+  const isOnlyEmojis = (text) => {
+    const emojiRegex =
+      /^(\p{Emoji_Presentation}|\p{Emoji}\uFE0F|\p{Emoji_Modifier_Base})+$/gu;
+    return emojiRegex.test(text.trim());
   };
 
   // Handle file selection
@@ -273,8 +281,16 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
     }
   };
 
+  // Updated sendMessage function to handle Shift+Enter
   const sendMessage = async (event) => {
-    if (event.key === "Enter" && newMessage) {
+    // If Shift+Enter is pressed, allow line break (don't send message)
+    if (event.shiftKey && event.key === "Enter") {
+      return; // Let the default behavior happen (add new line)
+    }
+
+    // If just Enter is pressed (without Shift), send the message
+    if (event.key === "Enter" && newMessage.trim()) {
+      event.preventDefault(); // Prevent default to avoid adding new line
       await handleSendMessage();
     }
   };
@@ -292,6 +308,7 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
 
         const messageContent = newMessage.trim();
         const isViewOnce = isViewOnceEnabled;
+        const onlyEmojis = isOnlyEmojis(messageContent);
 
         setNewMessage("");
         setIsViewOnceEnabled(false);
@@ -302,6 +319,7 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
             content: messageContent,
             chatId: selectedChat,
             isViewOnce: isViewOnce,
+            isOnlyEmojis: onlyEmojis, // Add this field to identify emoji-only messages
           },
           config
         );
@@ -393,6 +411,10 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
   const handleEmojiClick = (emojiObject) => {
     setNewMessage((prev) => prev + emojiObject.emoji);
     setShowEmojiPicker(false);
+    // Focus back to textarea
+    if (textareaRef.current) {
+      textareaRef.current.focus();
+    }
   };
 
   const toggleViewOnceMode = () => {
@@ -416,6 +438,15 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
     setMediaType(null);
     setUploadProgress(0);
     onClose();
+  };
+
+  // Auto-resize textarea
+  const adjustTextareaHeight = () => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "auto";
+      textareaRef.current.style.height =
+        Math.min(textareaRef.current.scrollHeight, 120) + "px";
+    }
   };
 
   useEffect(() => {
@@ -476,6 +507,10 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
     });
   });
 
+  useEffect(() => {
+    adjustTextareaHeight();
+  }, [newMessage]);
+
   const typingHandler = (e) => {
     setNewMessage(e.target.value);
 
@@ -519,6 +554,7 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
                   {getSender(user, selectedChat.users)}
                   <ProfileModal
                     user={getSenderFull(user, selectedChat.users)}
+                    currentUser={user}
                   />
                 </>
               ) : (
@@ -606,7 +642,7 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
                 </Box>
               )}
 
-              <Box display="flex" alignItems="center" gap="2">
+              <Box display="flex" alignItems="flex-end" gap="2">
                 {/* Emoji Picker */}
                 <Popover
                   isOpen={showEmojiPicker}
@@ -737,13 +773,15 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
                   />
                 </Tooltip>
 
-                <Input
+                {/* Textarea for message input */}
+                <Textarea
+                  ref={textareaRef}
                   variant="filled"
                   bg="white"
                   placeholder={
                     isViewOnceEnabled
                       ? "Type your disappearing message..."
-                      : "Type a message..."
+                      : "Type a message... "
                   }
                   value={newMessage}
                   onChange={typingHandler}
@@ -763,6 +801,11 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
                   fontSize="16px"
                   color="#34495E"
                   p={4}
+                  minH="50px"
+                  maxH="120px"
+                  resize="none"
+                  rows={1}
+                  overflow="hidden"
                 />
 
                 <IconButton
@@ -776,6 +819,7 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
                     bg: isViewOnceEnabled ? "purple.600" : "blue.600",
                   }}
                   boxShadow="base"
+                  size="md"
                 />
               </Box>
             </FormControl>
