@@ -560,8 +560,14 @@ const ScrollableChat = ({
 
     // Regular message rendering
     return (
+      // Message Component (your existing component with modifications)
       <div
-        style={{ display: "flex", marginBottom: "10px" }}
+        style={{
+          display: "flex",
+          maxWidth: "100%",
+          overflow: "hidden", // Keep this to prevent horizontal scrollbar
+          position: "relative",
+        }}
         key={m._id}
         role="group"
       >
@@ -578,6 +584,7 @@ const ScrollableChat = ({
             />
           </Tooltip>
         )}
+
         <Box
           style={{
             backgroundImage: onlyEmojis
@@ -599,7 +606,7 @@ const ScrollableChat = ({
             boxShadow: onlyEmojis ? "none" : "sm",
           }}
         >
-          {/* Message Context Menu */}
+          {/* Message Context Menu - Keep the trigger here */}
           <MessageContextMenu
             message={m}
             currentUser={user}
@@ -676,40 +683,18 @@ const ScrollableChat = ({
 
   return (
     <>
-      <Box
-        w="100%"
-        h="100%"
-        overflowY="auto"
-        overflowX="hidden"
-        css={{
-          "&::-webkit-scrollbar": {
-            display: "none",
-          },
-          "&::-webkit-scrollbar-track": {
-            display: "none",
-          },
-          "&::-webkit-scrollbar-thumb": {
-            display: "none",
-          },
-          "&::-webkit-scrollbar-horizontal": {
-            display: "none",
-          },
-          "-ms-overflow-style": "none",
-          "scrollbar-width": "none",
+      <ScrollableFeed
+        style={{
+          width: "100%",
+          overflowX: "hidden",
+          overflowY: "auto",
+          maxWidth: "100%",
+          minWidth: "0",
         }}
+        className="scrollable-feed"
       >
-        <ScrollableFeed
-          style={{
-            width: "100%",
-            overflowX: "hidden",
-            overflowY: "auto",
-          }}
-          className="scrollable-feed"
-        >
-          {Array.isArray(messages) &&
-            messages.map((m, i) => renderMessage(m, i))}
-        </ScrollableFeed>
-      </Box>
+        {Array.isArray(messages) && messages.map((m, i) => renderMessage(m, i))}
+      </ScrollableFeed>
 
       {/* Delete Confirmation Modal */}
       <Modal isOpen={deleteModalOpen} onClose={() => setDeleteModalOpen(false)}>

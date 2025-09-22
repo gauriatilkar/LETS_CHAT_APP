@@ -1,10 +1,6 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
 import {
-  Menu,
-  MenuButton,
-  MenuList,
-  MenuItem,
-  MenuDivider,
   IconButton,
   useToast,
   Modal,
@@ -20,6 +16,9 @@ import {
   VStack,
   HStack,
   Badge,
+  Box,
+  MenuItem,
+  MenuDivider,
 } from "@chakra-ui/react";
 import {
   ChevronDownIcon,
@@ -39,6 +38,10 @@ const MessageContextMenu = ({
   chatUsers,
 }) => {
   const [loading, setLoading] = useState(false);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [dropdownPosition, setDropdownPosition] = useState({ x: 0, y: 0 });
+  const triggerRef = useRef(null);
+
   const {
     isOpen: isInfoOpen,
     onOpen: onInfoOpen,
@@ -59,87 +62,192 @@ const MessageContextMenu = ({
     return messageTime >= fifteenMinutesAgo;
   };
 
+  const handleMenuOpen = () => {
+    if (triggerRef.current) {
+      const rect = triggerRef.current.getBoundingClientRect();
+      const viewportWidth = window.innerWidth;
+      const dropdownWidth = 150; // Approximate width of dropdown
+
+      // Position dropdown to the left if it would overflow the right edge
+      const leftPosition =
+        rect.left + dropdownWidth > viewportWidth
+          ? rect.left - dropdownWidth + rect.width
+          : rect.left;
+
+      setDropdownPosition({
+        x: leftPosition,
+        y: rect.bottom + 5,
+      });
+    }
+    setIsMenuOpen(true);
+  };
+
+  const handleMenuClose = () => {
+    setIsMenuOpen(false);
+  };
+
   const handleReply = () => {
     onReply(message);
+    handleMenuClose();
   };
 
   const handleEdit = () => {
     onEdit(message);
+    handleMenuClose();
   };
 
   const handleDelete = () => {
     onDelete(message);
+    handleMenuClose();
   };
+
+  const handleInfoOpen = () => {
+    onInfoOpen();
+    handleMenuClose();
+  };
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (
+        isMenuOpen &&
+        !event.target.closest(".context-menu-dropdown") &&
+        !event.target.closest(".menu-trigger")
+      ) {
+        handleMenuClose();
+      }
+    };
+
+    if (isMenuOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [isMenuOpen]);
+
+  // Close dropdown on scroll
+  useEffect(() => {
+    const handleScroll = () => {
+      if (isMenuOpen) {
+        handleMenuClose();
+      }
+    };
+
+    if (isMenuOpen) {
+      window.addEventListener("scroll", handleScroll, true);
+    }
+
+    return () => {
+      window.removeEventListener("scroll", handleScroll, true);
+    };
+  }, [isMenuOpen]);
 
   return (
     <>
-      <Menu>
-        <MenuButton
-          as={IconButton}
-          icon={<ChevronDownIcon />}
-          variant="ghost"
-          size="xs"
-          opacity={0}
-          _groupHover={{ opacity: 1 }}
-          _hover={{ bg: "rgba(255,255,255,0.2)" }}
-          position="absolute"
-          top="2px"
-          right="2px"
-          zIndex={2}
-          color="rgba(255,255,255,0.8)"
-        />
-        <MenuList
-          fontSize="sm"
-          minW="150px"
-          bg="white"
-          border="1px solid #E2E8F0"
-        >
-          {/* Reply option - available for all messages */}
-          <MenuItem
-            icon={<RepeatIcon />}
-            onClick={handleReply}
-            _hover={{ bg: "gray.50" }}
+      {/* Trigger Button */}
+      <IconButton
+        ref={triggerRef}
+        className="menu-trigger"
+        icon={<ChevronDownIcon />}
+        variant="ghost"
+        size="xs"
+        opacity={0}
+        _groupHover={{ opacity: 1 }}
+        _hover={{ bg: "rgba(255,255,255,0.2)" }}
+        position="absolute"
+        top="2px"
+        right="2px"
+        zIndex={2}
+        color="rgba(255,255,255,0.8)"
+        onClick={handleMenuOpen}
+      />
+
+      {/* Dropdown Menu - renders in portal */}
+      {isMenuOpen &&
+        createPortal(
+          <Box
+            className="context-menu-dropdown"
+            position="fixed"
+            top={`${dropdownPosition.y}px`}
+            left={`${dropdownPosition.x}px`}
+            zIndex={9999}
+            bg="white"
+            boxShadow="lg"
+            borderRadius="md"
+            border="1px solid #E2E8F0"
+            py={1}
+            minW="150px"
+            fontSize="sm"
           >
-            Reply
-          </MenuItem>
-
-          {/* View message info */}
-          <MenuItem
-            icon={<InfoIcon />}
-            onClick={onInfoOpen}
-            _hover={{ bg: "gray.50" }}
-          >
-            Message Info
-          </MenuItem>
-
-          {isOwnMessage && (canEditMessage() || canDelete) && (
-            <MenuDivider borderColor="gray.200" />
-          )}
-
-          {/* Edit option - only for own messages within 15 minutes */}
-          {isOwnMessage && canEditMessage() && (
-            <MenuItem
-              icon={<EditIcon />}
-              onClick={handleEdit}
+            {/* Reply option - available for all messages */}
+            <Box
+              display="flex"
+              alignItems="center"
+              px={3}
+              py={2}
+              cursor="pointer"
               _hover={{ bg: "gray.50" }}
+              onClick={handleReply}
             >
-              Edit Message
-            </MenuItem>
-          )}
+              <RepeatIcon mr={2} />
+              <Text>Reply</Text>
+            </Box>
 
-          {/* Delete option - only for own messages */}
-          {canDelete && (
-            <MenuItem
-              icon={<DeleteIcon />}
-              onClick={handleDelete}
-              color="red.500"
-              _hover={{ bg: "red.50", color: "red.600" }}
+            {/* View message info */}
+            <Box
+              display="flex"
+              alignItems="center"
+              px={3}
+              py={2}
+              cursor="pointer"
+              _hover={{ bg: "gray.50" }}
+              onClick={handleInfoOpen}
             >
-              Delete Message
-            </MenuItem>
-          )}  
-        </MenuList>
-      </Menu>
+              <InfoIcon mr={2} />
+              <Text>Message Info</Text>
+            </Box>
+
+            {isOwnMessage && (canEditMessage() || canDelete) && (
+              <Box height="1px" bg="gray.200" my={1} />
+            )}
+
+            {/* Edit option - only for own messages within 15 minutes */}
+            {isOwnMessage && canEditMessage() && (
+              <Box
+                display="flex"
+                alignItems="center"
+                px={3}
+                py={2}
+                cursor="pointer"
+                _hover={{ bg: "gray.50" }}
+                onClick={handleEdit}
+              >
+                <EditIcon mr={2} />
+                <Text>Edit Message</Text>
+              </Box>
+            )}
+
+            {/* Delete option - only for own messages */}
+            {canDelete && (
+              <Box
+                display="flex"
+                alignItems="center"
+                px={3}
+                py={2}
+                cursor="pointer"
+                color="red.500"
+                _hover={{ bg: "red.50", color: "red.600" }}
+                onClick={handleDelete}
+              >
+                <DeleteIcon mr={2} />
+                <Text>Delete Message</Text>
+              </Box>
+            )}
+          </Box>,
+          document.body
+        )}
 
       {/* Message Info Modal */}
       <Modal isOpen={isInfoOpen} onClose={onInfoClose}>
