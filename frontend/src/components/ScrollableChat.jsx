@@ -19,6 +19,7 @@ import {
   VStack,
   useToast,
   Textarea,
+  useBreakpointValue,
 } from "@chakra-ui/react";
 import { ViewIcon, CheckIcon, CloseIcon } from "@chakra-ui/icons";
 import ScrollableFeed from "react-scrollable-feed";
@@ -54,6 +55,18 @@ const ScrollableChat = ({
   const [selectedMedia, setSelectedMedia] = useState(null);
   const [selectedMediaType, setSelectedMediaType] = useState(null);
   const toast = useToast();
+
+  // Mobile responsive values
+  const isMobile = useBreakpointValue({ base: true, md: false });
+  const avatarSize = useBreakpointValue({ base: "xs", md: "sm" });
+  const messagePadding = useBreakpointValue({
+    base: "6px 12px",
+    md: "8px 15px",
+  });
+  const borderRadius = useBreakpointValue({ base: "16px", md: "20px" });
+  const maxMessageWidth = useBreakpointValue({ base: "85%", md: "75%" });
+  const fontSize = useBreakpointValue({ base: "13px", md: "14px" });
+  const timestampFontSize = useBreakpointValue({ base: "9px", md: "10px" });
 
   const API_URL = import.meta.env.VITE_BACKEND_URL;
 
@@ -233,7 +246,7 @@ const ScrollableChat = ({
           <span
             key={index}
             style={{
-              fontSize: "1.4em",
+              fontSize: isMobile ? "1.2em" : "1.4em",
               lineHeight: "1.2",
               display: "inline-block",
               margin: "0 1px",
@@ -259,7 +272,7 @@ const ScrollableChat = ({
     // Show deleted message placeholder
     if (isDeleted && deleteType === "everyone") {
       return (
-        <Text fontSize="sm" color="gray.500" fontStyle="italic">
+        <Text fontSize={fontSize} color="gray.500" fontStyle="italic">
           🚫 This message was deleted
         </Text>
       );
@@ -280,14 +293,14 @@ const ScrollableChat = ({
                 handleCancelEdit();
               }
             }}
-            size="sm"
+            size={isMobile ? "xs" : "sm"}
             bg="rgba(255,255,255,0.9)"
             borderColor="blue.300"
             _focus={{ borderColor: "blue.400" }}
             resize="none"
-            minH="40px"
-            maxH="120px"
-            fontSize="14px"
+            minH={isMobile ? "35px" : "40px"}
+            maxH={isMobile ? "100px" : "120px"}
+            fontSize={fontSize}
             fontFamily="'Poppins', sans-serif"
             placeholder="Edit your message..."
             autoFocus
@@ -295,7 +308,7 @@ const ScrollableChat = ({
           <VStack spacing={1}>
             <IconButton
               icon={<CheckIcon />}
-              size="sm"
+              size={isMobile ? "xs" : "sm"}
               colorScheme="green"
               onClick={handleSaveEdit}
               isLoading={isEditingLoading}
@@ -303,7 +316,7 @@ const ScrollableChat = ({
             />
             <IconButton
               icon={<CloseIcon />}
-              size="sm"
+              size={isMobile ? "xs" : "sm"}
               variant="ghost"
               onClick={handleCancelEdit}
               aria-label="Cancel edit"
@@ -327,19 +340,19 @@ const ScrollableChat = ({
             <Image
               src={content}
               alt="Shared image"
-              maxW="300px"
-              maxH="200px"
-              minW="200px"
-              minH="150px"
-              borderRadius="12px"
+              maxW={isMobile ? "250px" : "300px"}
+              maxH={isMobile ? "150px" : "200px"}
+              minW={isMobile ? "150px" : "200px"}
+              minH={isMobile ? "100px" : "150px"}
+              borderRadius={isMobile ? "8px" : "12px"}
               objectFit="cover"
               transition="all 0.2s"
               _hover={{
-                transform: "scale(1.02)",
-                boxShadow: "lg",
+                transform: isMobile ? "none" : "scale(1.02)",
+                boxShadow: isMobile ? "none" : "lg",
               }}
               fallback={
-                <Text fontSize="sm" color="gray.500">
+                <Text fontSize={fontSize} color="gray.500">
                   Image failed to load
                 </Text>
               }
@@ -352,20 +365,24 @@ const ScrollableChat = ({
               borderRadius="full"
               p="1"
             >
-              <ViewIcon color="white" boxSize="12px" />
+              <ViewIcon color="white" boxSize={isMobile ? "10px" : "12px"} />
             </Box>
           </Box>
         );
       } else if (actualMediaType === "video") {
         return (
           <Box position="relative">
-            <AspectRatio ratio={16 / 9} maxW="450px" minW="300px">
+            <AspectRatio
+              ratio={16 / 9}
+              maxW={isMobile ? "350px" : "450px"}
+              minW={isMobile ? "250px" : "300px"}
+            >
               <video
                 src={content}
                 controls
                 preload="metadata"
                 style={{
-                  borderRadius: "12px",
+                  borderRadius: isMobile ? "8px" : "12px",
                   width: "100%",
                   height: "100%",
                   objectFit: "cover",
@@ -381,7 +398,7 @@ const ScrollableChat = ({
             </AspectRatio>
             <IconButton
               icon={<ViewIcon />}
-              size="sm"
+              size={isMobile ? "xs" : "sm"}
               position="absolute"
               top="8px"
               right="8px"
@@ -404,7 +421,7 @@ const ScrollableChat = ({
     if (onlyEmojis) {
       return (
         <Text
-          fontSize="2.5rem"
+          fontSize={isMobile ? "2rem" : "2.5rem"}
           lineHeight="1.2"
           whiteSpace="pre-wrap"
           textAlign="center"
@@ -416,7 +433,7 @@ const ScrollableChat = ({
     } else {
       return (
         <Text
-          fontSize="14px"
+          fontSize={fontSize}
           lineHeight="1.4"
           whiteSpace="pre-wrap"
           fontFamily="'Poppins', sans-serif"
@@ -454,14 +471,20 @@ const ScrollableChat = ({
     // If it's a view-once message and hasn't been viewed yet by current user
     if (m.isViewOnce && !isViewed && !isCurrentUser && !hasViewedBy) {
       return (
-        <div style={{ display: "flex", marginBottom: "10px" }} key={m._id}>
+        <div
+          style={{
+            display: "flex",
+            marginBottom: isMobile ? "8px" : "10px",
+          }}
+          key={m._id}
+        >
           {(isSameSender(messages, m, i, user._id) ||
             isLastMessage(messages, i, user._id)) && (
             <Tooltip label={m.sender.name} placement="bottom-start" hasArrow>
               <Avatar
                 mt="7px"
                 mr={1}
-                size="sm"
+                size={avatarSize}
                 cursor="pointer"
                 name={m.sender.name}
                 src={m.sender.pic}
@@ -472,14 +495,14 @@ const ScrollableChat = ({
             bg="purple.50"
             border="2px dashed"
             borderColor="purple.300"
-            borderRadius="20px"
-            p={3}
-            maxWidth="75%"
+            borderRadius={borderRadius}
+            p={isMobile ? 2 : 3}
+            maxWidth={maxMessageWidth}
             marginLeft={isSameSenderMargin(messages, m, i, user._id)}
             marginTop={isSameUser(messages, m, i, user._id) ? 3 : 10}
             position="relative"
           >
-            <Text fontSize="sm" color="purple.600" mb={2}>
+            <Text fontSize={fontSize} color="purple.600" mb={2}>
               Tap to view this{" "}
               {m.mediaType === "image"
                 ? "photo"
@@ -489,11 +512,12 @@ const ScrollableChat = ({
               once
             </Text>
             <Button
-              size="sm"
+              size={isMobile ? "xs" : "sm"}
               colorScheme="purple"
               variant="solid"
               onClick={() => handleViewOnceClick(m._id)}
               borderRadius="full"
+              fontSize={isMobile ? "xs" : "sm"}
             >
               👁️ View{" "}
               {m.mediaType === "image"
@@ -510,14 +534,20 @@ const ScrollableChat = ({
     // If it's a view-once message that has been viewed
     if (m.isViewOnce && (isViewed || hasViewedBy)) {
       return (
-        <div style={{ display: "flex", marginBottom: "10px" }} key={m._id}>
+        <div
+          style={{
+            display: "flex",
+            marginBottom: isMobile ? "8px" : "10px",
+          }}
+          key={m._id}
+        >
           {(isSameSender(messages, m, i, user._id) ||
             isLastMessage(messages, i, user._id)) && (
             <Tooltip label={m.sender.name} placement="bottom-start" hasArrow>
               <Avatar
                 mt="7px"
                 mr={1}
-                size="sm"
+                size={avatarSize}
                 cursor="pointer"
                 name={m.sender.name}
                 src={m.sender.pic}
@@ -527,8 +557,8 @@ const ScrollableChat = ({
           )}
           <Box
             bg={isCurrentUser ? "#E6FFFA" : "#F7FAFC"}
-            borderRadius="20px"
-            p={3}
+            borderRadius={borderRadius}
+            p={isMobile ? 2 : 3}
             maxWidth="65%"
             marginLeft={isSameSenderMargin(messages, m, i, user._id)}
             marginTop={isSameUser(messages, m, i, user._id) ? 3 : 10}
@@ -537,7 +567,7 @@ const ScrollableChat = ({
           >
             {!isCurrentUser && isViewed && <Box>{renderMessageContent(m)}</Box>}
             {isCurrentUser && (
-              <Text fontSize="sm" color="gray.600" fontStyle="italic">
+              <Text fontSize={fontSize} color="gray.600" fontStyle="italic">
                 View once{" "}
                 {m.mediaType === "image"
                   ? "photo"
@@ -547,7 +577,7 @@ const ScrollableChat = ({
                 sent
               </Text>
             )}
-            <Text fontSize="xs" color="gray.400" mt={1}>
+            <Text fontSize={timestampFontSize} color="gray.400" mt={1}>
               {new Date(m.createdAt).toLocaleTimeString([], {
                 hour: "2-digit",
                 minute: "2-digit",
@@ -560,13 +590,13 @@ const ScrollableChat = ({
 
     // Regular message rendering
     return (
-      // Message Component (your existing component with modifications)
       <div
         style={{
           display: "flex",
           maxWidth: "100%",
-          overflow: "hidden", // Keep this to prevent horizontal scrollbar
+          overflow: "hidden",
           position: "relative",
+          marginBottom: isMobile ? "6px" : "8px",
         }}
         key={m._id}
         role="group"
@@ -577,7 +607,7 @@ const ScrollableChat = ({
             <Avatar
               mt="7px"
               mr={1}
-              size="sm"
+              size={avatarSize}
               cursor="pointer"
               name={m.sender.name}
               src={m.sender.pic}
@@ -597,16 +627,16 @@ const ScrollableChat = ({
             backgroundColor: onlyEmojis ? "transparent" : undefined,
             marginLeft: isSameSenderMargin(messages, m, i, user._id),
             marginTop: isSameUser(messages, m, i, user._id) ? 3 : 10,
-            borderRadius: onlyEmojis ? "0" : "20px",
-            padding: onlyEmojis ? "4px 8px" : "8px 15px",
-            maxWidth: onlyEmojis ? "auto" : "75%",
+            borderRadius: onlyEmojis ? "0" : borderRadius,
+            padding: onlyEmojis ? "4px 8px" : messagePadding,
+            maxWidth: onlyEmojis ? "auto" : maxMessageWidth,
             position: "relative",
             display: "block",
             wordWrap: "break-word",
             boxShadow: onlyEmojis ? "none" : "sm",
           }}
         >
-          {/* Message Context Menu - Keep the trigger here */}
+          {/* Message Context Menu */}
           <MessageContextMenu
             message={m}
             currentUser={user}
@@ -624,7 +654,7 @@ const ScrollableChat = ({
               position="absolute"
               top="-8px"
               right="5px"
-              fontSize="8px"
+              fontSize={isMobile ? "7px" : "8px"}
             >
               🔒
             </Badge>
@@ -635,14 +665,14 @@ const ScrollableChat = ({
             <WhatsAppReply replyTo={m.replyTo} currentUser={user} />
           )}
 
-          {/* Message Content - either editable or display */}
+          {/* Message Content */}
           {renderMessageContent(m)}
 
           {/* Only show timestamp and read receipts for non-emoji-only messages */}
           {!onlyEmojis && (
             <div
               style={{
-                fontSize: "10px",
+                fontSize: timestampFontSize,
                 color: "rgba(0,0,0,0.5)",
                 marginTop: "2px",
                 textAlign: "right",
@@ -670,7 +700,12 @@ const ScrollableChat = ({
 
               {/* Show edited indicator */}
               {m.isEdited && (
-                <span style={{ fontStyle: "italic", fontSize: "9px" }}>
+                <span
+                  style={{
+                    fontStyle: "italic",
+                    fontSize: isMobile ? "8px" : "9px",
+                  }}
+                >
                   edited
                 </span>
               )}
@@ -690,6 +725,7 @@ const ScrollableChat = ({
           overflowY: "auto",
           maxWidth: "100%",
           minWidth: "0",
+          padding: isMobile ? "8px" : "12px",
         }}
         className="scrollable-feed"
       >
@@ -697,14 +733,18 @@ const ScrollableChat = ({
       </ScrollableFeed>
 
       {/* Delete Confirmation Modal */}
-      <Modal isOpen={deleteModalOpen} onClose={() => setDeleteModalOpen(false)}>
+      <Modal
+        isOpen={deleteModalOpen}
+        onClose={() => setDeleteModalOpen(false)}
+        size={isMobile ? "xs" : "md"}
+      >
         <ModalOverlay />
-        <ModalContent>
-          <Box p={6}>
-            <Text fontSize="lg" fontWeight="bold" mb={4}>
+        <ModalContent mx={isMobile ? 4 : "auto"}>
+          <Box p={isMobile ? 4 : 6}>
+            <Text fontSize={isMobile ? "md" : "lg"} fontWeight="bold" mb={4}>
               Delete Message
             </Text>
-            <Text mb={4} color="gray.600">
+            <Text mb={4} color="gray.600" fontSize={isMobile ? "sm" : "md"}>
               Are you sure you want to delete this message?
             </Text>
             <VStack spacing={3}>
@@ -714,6 +754,7 @@ const ScrollableChat = ({
                 colorScheme="red"
                 onClick={() => handleDelete("sender")}
                 isLoading={deleteLoading}
+                size={isMobile ? "sm" : "md"}
               >
                 Delete for me
               </Button>
@@ -722,6 +763,7 @@ const ScrollableChat = ({
                 colorScheme="red"
                 onClick={() => handleDelete("everyone")}
                 isLoading={deleteLoading}
+                size={isMobile ? "sm" : "md"}
               >
                 Delete for everyone
               </Button>
@@ -729,6 +771,7 @@ const ScrollableChat = ({
                 w="100%"
                 variant="ghost"
                 onClick={() => setDeleteModalOpen(false)}
+                size={isMobile ? "sm" : "md"}
               >
                 Cancel
               </Button>
@@ -750,8 +793,8 @@ const ScrollableChat = ({
           <ModalCloseButton
             color="white"
             size="lg"
-            top="20px"
-            right="20px"
+            top={isMobile ? "10px" : "20px"}
+            right={isMobile ? "10px" : "20px"}
             zIndex={1000}
             bg="blackAlpha.600"
             borderRadius="full"
@@ -772,7 +815,7 @@ const ScrollableChat = ({
                 maxW="95vw"
                 maxH="95vh"
                 objectFit="contain"
-                borderRadius="8px"
+                borderRadius={isMobile ? "4px" : "8px"}
               />
             ) : selectedMediaType === "video" ? (
               <Box
@@ -789,7 +832,7 @@ const ScrollableChat = ({
                   style={{
                     maxWidth: "100%",
                     maxHeight: "100%",
-                    borderRadius: "8px",
+                    borderRadius: isMobile ? "4px" : "8px",
                     objectFit: "contain",
                   }}
                 >

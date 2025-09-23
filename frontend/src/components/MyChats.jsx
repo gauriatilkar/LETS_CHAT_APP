@@ -1,6 +1,14 @@
 import React, { useEffect, useState } from "react";
-import { AddIcon } from "@chakra-ui/icons";
-import { Box, Stack, Text, Button } from "@chakra-ui/react";
+import { AddIcon, CloseIcon } from "@chakra-ui/icons";
+import {
+  Box,
+  Stack,
+  Text,
+  Button,
+  useBreakpointValue,
+  IconButton,
+  Flex,
+} from "@chakra-ui/react";
 import { useToast } from "@chakra-ui/toast";
 import axios from "axios";
 import { getSender } from "../config/ChatLogics";
@@ -8,10 +16,18 @@ import ChatLoading from "./ChatLoading";
 import GroupChatModal from "./miscellaneous/GroupChatModal";
 import { ChatState } from "../Context/ChatProvider";
 
-const MyChats = ({ fetchAgain }) => {
+const MyChats = ({ fetchAgain, onChatSelect }) => {
   const [loggedUser, setLoggedUser] = useState();
   const { selectedChat, setSelectedChat, user, chats, setChats } = ChatState();
   const toast = useToast();
+
+  // Mobile-responsive values
+  const isMobile = useBreakpointValue({ base: true, md: false });
+  const fontSize = useBreakpointValue({ base: "16px", md: "26px" });
+  const headerFontSize = useBreakpointValue({ base: "18px", md: "24px" });
+  const buttonFontSize = useBreakpointValue({ base: "11px", md: "14px" });
+  const chatItemPadding = useBreakpointValue({ base: 3, md: 4 });
+  const containerPadding = useBreakpointValue({ base: 0, md: 4 });
 
   const API_URL = import.meta.env.VITE_BACKEND_URL;
 
@@ -51,10 +67,7 @@ const MyChats = ({ fetchAgain }) => {
   // Helper function to check if a message should be displayed as latest message
   const shouldShowLatestMessage = (message) => {
     if (!message) return false;
-
-    // Don't show view-once messages as latest message
     if (message.isViewOnce) return false;
-
     return true;
   };
 
@@ -65,21 +78,32 @@ const MyChats = ({ fetchAgain }) => {
     }
 
     const message = chat.latestMessage;
+    const maxLength = isMobile ? 25 : 50;
     const content =
-      message.content.length > 50
-        ? message.content.substring(0, 51) + "..."
+      message.content.length > maxLength
+        ? message.content.substring(0, maxLength) + "..."
         : message.content;
 
     return (
       <Text
-        fontSize="sm"
-        color={selectedChat === chat ? "whiteAlpha.900" : "hsl(224, 58%, 45%)"}
+        fontSize={isMobile ? "11px" : "sm"}
+        color={selectedChat === chat ? "whiteAlpha.800" : "gray.600"}
         noOfLines={1}
+        mt={isMobile ? 0.5 : 1}
       >
-        <b>{message.sender.name}: </b>
+        <Text as="span" fontWeight="medium">
+          {message.sender.name}:
+        </Text>{" "}
         {content}
       </Text>
     );
+  };
+
+  const handleChatSelect = (chat) => {
+    setSelectedChat(chat);
+    if (onChatSelect) {
+      onChatSelect();
+    }
   };
 
   useEffect(() => {
@@ -90,68 +114,86 @@ const MyChats = ({ fetchAgain }) => {
 
   return (
     <Box
-      display={{ base: selectedChat ? "none" : "flex", md: "flex" }}
+      display={{
+        base: selectedChat && !onChatSelect ? "none" : "flex",
+        md: "flex",
+      }}
       flexDir="column"
       alignItems="center"
-      p={4}
+      p={containerPadding}
       bgGradient="linear(to-br, rgb(241, 245, 249), hsl(217, 52%, 78%))"
       w={{ base: "100%", md: "30%" }}
-      borderRadius="lg"
-      borderWidth="1px"
-      boxShadow="lg"
+      borderRadius={isMobile ? "0" : "lg"}
+      borderWidth={isMobile ? "0" : "1px"}
+      boxShadow={isMobile ? "none" : "lg"}
+      h={{ base: "100vh", md: "auto" }}
+      bg={isMobile ? "white" : undefined}
     >
+      {/* Header Section */}
       <Box
-        pb={4}
-        px={4}
-        fontSize={{ base: "24px", md: "26px" }}
+        pb={isMobile ? 2 : 4}
+        px={isMobile ? 3 : 4}
+        pt={isMobile ? 3 : 0}
+        w="100%"
+        borderBottom="2px solid hsl(224, 58%, 79%)"
+        bg={isMobile ? "white" : "transparent"}
         fontFamily="'Poppins', sans-serif"
         fontWeight="semibold"
         color="hsl(224, 58%, 25%)"
-        display="flex"
-        w="100%"
-        justifyContent="space-between"
-        alignItems="center"
-        borderBottom="2px solid hsl(224, 58%, 79%)"
       >
-        My Chats
-        <GroupChatModal>
-          <Button
-            display="flex"
-            bgGradient="linear(to-r, #3182ce, #63b3ed)"
-            color="white"
-            fontSize={{ base: "14px", md: "16px" }}
-            _hover={{
-              bgGradient: "linear(to-r, #2c5282, #4299e1)",
-              transform: "translateY(-1px)",
-            }}
-            rightIcon={<AddIcon />}
-            borderRadius="md"
-            boxShadow="md"
-            transition="all 0.2s"
+        {/* Both mobile and desktop use horizontal layout now */}
+        <Flex justify="space-between" align="center" w="100%">
+          <Text
+            fontSize={headerFontSize}
+            fontFamily="'Poppins', sans-serif"
+            fontWeight="semibold"
+            color="hsl(224, 58%, 25%)"
           >
-            New Group Chat
-          </Button>
-        </GroupChatModal>
+            My Chats
+          </Text>
+          <GroupChatModal>
+            <Button
+              display="flex"
+              bgGradient="linear(to-r, #3182ce, #63b3ed)"
+              color="white"
+              fontSize={buttonFontSize}
+              _hover={{
+                bgGradient: "linear(to-r, #2c5282, #4299e1)",
+                transform: isMobile ? "none" : "translateY(-1px)",
+              }}
+              rightIcon={<AddIcon />}
+              borderRadius="md"
+              boxShadow="md"
+              transition="all 0.2s"
+              size={isMobile ? "sm" : "md"}
+              px={isMobile ? 3 : 4}
+            >
+              {isMobile ? "New Group" : "New Group Chat"}
+            </Button>
+          </GroupChatModal>
+        </Flex>
       </Box>
 
+      {/* Chats List Section */}
       <Box
         display="flex"
         flexDir="column"
-        p={4}
+        p={isMobile ? 3 : 4}
         bg="white"
         w="100%"
-        h="85%"
-        borderRadius="lg"
+        h={isMobile ? "calc(100vh - 100px)" : "85%"}
+        borderRadius={isMobile ? "0" : "lg"}
         overflowY="hidden"
-        borderWidth="1px"
+        borderWidth={isMobile ? "0" : "1px"}
         borderColor="hsl(224, 58%, 85%)"
-        boxShadow="sm"
+        boxShadow={isMobile ? "none" : "sm"}
       >
         {Array.isArray(chats) && chats.length > 0 ? (
-          <Stack overflowY="auto" spacing={3}>
+          <Stack overflowY="auto" spacing={isMobile ? 0 : 3} h="100%">
             {chats.map((chat) => (
               <Box
-                onClick={() => setSelectedChat(chat)}
+                key={chat._id}
+                onClick={() => handleChatSelect(chat)}
                 cursor="pointer"
                 bgGradient={
                   selectedChat === chat
@@ -160,38 +202,55 @@ const MyChats = ({ fetchAgain }) => {
                 }
                 bg={selectedChat === chat ? undefined : "rgb(241, 245, 249)"}
                 color={selectedChat === chat ? "white" : "hsl(224, 58%, 25%)"}
-                px={4}
-                py={3}
+                px={chatItemPadding}
+                py={chatItemPadding}
                 borderRadius="md"
-                key={chat._id}
                 transition="all 0.2s"
                 _hover={{
-                  transform: "translateY(-2px)",
-                  boxShadow: "md",
+                  transform: isMobile ? "none" : "translateY(-2px)",
+                  boxShadow: isMobile ? "none" : "md",
                   bgGradient:
                     selectedChat === chat
                       ? "linear(to-r, #2c5282, #4299e1)"
                       : "linear(to-r, hsl(217, 52%, 78%), hsl(224, 58%, 79%))",
                 }}
-                boxShadow={selectedChat === chat ? "md" : "sm"}
+                boxShadow={
+                  selectedChat === chat ? (isMobile ? "none" : "md") : "sm"
+                }
+                minH={isMobile ? "auto" : "auto"}
+                display="flex"
+                flexDirection="column"
+                justifyContent="center"
+                borderBottom={isMobile ? "1px solid #E2E8F0" : "none"}
+                
               >
                 <Text
-                  fontSize="md"
+                  fontSize={isMobile ? "14px" : "md"}
                   fontWeight="semibold"
                   fontFamily="'Poppins', sans-serif"
                   noOfLines={1}
+                  lineHeight={isMobile ? "1.3" : "1.4"}
                 >
                   {!chat.isGroupChat
                     ? getSender(loggedUser, chat.users)
                     : chat.chatName}
                 </Text>
-                {/* Only show latest message if it's not a view-once message */}
+
+                {/* Latest message display */}
                 {getLatestMessageDisplay(chat)}
               </Box>
             ))}
           </Stack>
         ) : (
-          <ChatLoading />
+          <Box
+            display="flex"
+            alignItems="center"
+            justifyContent="center"
+            h="100%"
+            minH="200px"
+          >
+            <ChatLoading />
+          </Box>
         )}
       </Box>
     </Box>

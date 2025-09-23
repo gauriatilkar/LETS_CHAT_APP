@@ -24,11 +24,17 @@ import {
   Progress,
   Flex,
   CloseButton,
+  useBreakpointValue,
 } from "@chakra-ui/react";
 import { getSender, getSenderFull } from "../config/ChatLogics";
 import { useEffect, useState, useRef } from "react";
 import axios from "axios";
-import { ArrowBackIcon, LockIcon, AttachmentIcon } from "@chakra-ui/icons";
+import {
+  ArrowBackIcon,
+  LockIcon,
+  AttachmentIcon,
+  ChevronLeftIcon,
+} from "@chakra-ui/icons";
 import { FiImage, FiVideo, FiCamera } from "react-icons/fi";
 import ProfileModal from "./miscellaneous/ProfileModal";
 import ScrollableChat from "./ScrollableChat";
@@ -65,6 +71,12 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [isUploading, setIsUploading] = useState(false);
   const [showMediaOptions, setShowMediaOptions] = useState(false);
+
+  // Mobile responsive values
+  const isMobile = useBreakpointValue({ base: true, md: false });
+  const headerFontSize = useBreakpointValue({ base: "18px", md: "30px" });
+  const inputFontSize = useBreakpointValue({ base: "14px", md: "16px" });
+  const buttonSize = useBreakpointValue({ base: "sm", md: "md" });
 
   const fileInputRef = useRef();
   const textareaRef = useRef();
@@ -107,7 +119,7 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
       socket.emit("join chat", selectedChat._id);
     } catch (error) {
       toast({
-        title: "Error Occured!",
+        title: "Error Occurred!",
         description: "Failed to Load the Messages",
         status: "error",
         duration: 5000,
@@ -149,6 +161,11 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
 
   const handleClearReply = () => {
     setReplyMessage(null);
+  };
+
+  // Handle back button for mobile
+  const handleMobileBack = () => {
+    setSelectedChat(null);
   };
 
   // Update the handleMessageUpdate function in SingleChat component
@@ -194,6 +211,7 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
       deleteFor,
     });
   };
+
   // Handle file selection
   const handleFileSelect = (event) => {
     const file = event.target.files[0];
@@ -408,7 +426,7 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
 
         if (isViewOnce) {
           toast({
-            title: "View Once Message Sent! 🔒",
+            title: "View Once Message Sent!",
             description: "This message can only be viewed once",
             status: "info",
             duration: 3000,
@@ -500,7 +518,7 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
     setIsViewOnceEnabled(!isViewOnceEnabled);
     if (!isViewOnceEnabled) {
       toast({
-        title: "View Once Mode Enabled 🔒",
+        title: "View Once Mode Enabled",
         description: "Your next message will disappear after being viewed",
         status: "info",
         duration: 2000,
@@ -524,7 +542,7 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
       textareaRef.current.style.height =
-        Math.min(textareaRef.current.scrollHeight, 120) + "px";
+        Math.min(textareaRef.current.scrollHeight, isMobile ? 100 : 120) + "px";
     }
   };
 
@@ -676,43 +694,70 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
     <>
       {selectedChat ? (
         <>
-          <Text
-            fontSize={{ base: "28px", md: "30px" }}
-            pb={3}
-            px={2}
-            w="100%"
-            fontFamily="'Poppins','sans-serif'"
+          {/* Header with mobile back button */}
+          <Box
             display="flex"
-            color="#2C3E50"
-            justifyContent={{ base: "space-between" }}
             alignItems="center"
+            justifyContent="space-between"
+            pb={isMobile ? 2 : 3}
+            px={isMobile ? 2 : 2}
+            w="100%"
             borderBottom="1px solid #E0E0E0"
+            bg="white"
+            position="sticky"
+            top="0"
+            zIndex={10}
+            boxShadow={isMobile ? "sm" : "none"}
           >
+            {/* Mobile back button */}
+            {isMobile && (
+              <IconButton
+                icon={<ChevronLeftIcon />}
+                onClick={handleMobileBack}
+                variant="ghost"
+                size="sm"
+                mr={2}
+                aria-label="Back to chats"
+              />
+            )}
+
+            {/* Chat name/user info */}
+            <Box flex="1" minW="0">
+              <Text
+                fontSize={headerFontSize}
+                fontFamily="'Poppins','sans-serif'"
+                fontWeight="semibold"
+                color="#2C3E50"
+                noOfLines={1}
+              >
+                {messages &&
+                  (!selectedChat.isGroupChat
+                    ? getSender(user, selectedChat.users)
+                    : selectedChat.chatName.toUpperCase())}
+              </Text>
+            </Box>
+
+            {/* Profile/Settings Modal */}
             {messages &&
               (!selectedChat.isGroupChat ? (
-                <>
-                  {getSender(user, selectedChat.users)}
-                  <ProfileModal
-                    user={getSenderFull(user, selectedChat.users)}
-                    currentUser={user}
-                  />
-                </>
+                <ProfileModal
+                  user={getSenderFull(user, selectedChat.users)}
+                  currentUser={user}
+                />
               ) : (
-                <>
-                  {selectedChat.chatName.toUpperCase()}
-                  <UpdateGroupChatModal
-                    fetchMessages={fetchMessages}
-                    fetchAgain={fetchAgain}
-                    setFetchAgain={setFetchAgain}
-                  />
-                </>
+                <UpdateGroupChatModal
+                  fetchMessages={fetchMessages}
+                  fetchAgain={fetchAgain}
+                  setFetchAgain={setFetchAgain}
+                />
               ))}
-          </Text>
+          </Box>
+
           <Box
             display="flex"
             flexDir="column"
             justifyContent="flex-end"
-            p={4}
+            p={isMobile ? 2 : 4}
             bg="#F8FAFC"
             w="100%"
             h="100%"
@@ -720,9 +765,9 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
           >
             {loading ? (
               <Spinner
-                size="xl"
-                w={20}
-                h={20}
+                size={isMobile ? "lg" : "xl"}
+                w={isMobile ? 16 : 20}
+                h={isMobile ? 16 : 20}
                 color="blue.500"
                 alignSelf="center"
                 margin="auto"
@@ -740,13 +785,13 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
               </div>
             )}
 
-            <FormControl id="first-name" isRequired mt={3}>
+            <FormControl id="first-name" isRequired mt={isMobile ? 2 : 3}>
               {istyping && (
                 <div>
                   <Lottie
                     options={defaultOptions}
-                    width={70}
-                    style={{ marginBottom: 15, marginLeft: 0 }}
+                    width={isMobile ? 50 : 70}
+                    style={{ marginBottom: isMobile ? 10 : 15, marginLeft: 0 }}
                   />
                 </div>
               )}
@@ -762,24 +807,25 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
               {isViewOnceEnabled && (
                 <Box
                   mb={2}
-                  p={3}
+                  p={isMobile ? 2 : 3}
                   bg="purple.50"
                   border="1px solid"
                   borderColor="purple.200"
                   borderRadius="lg"
-                  fontSize="sm"
+                  fontSize={isMobile ? "xs" : "sm"}
                   color="purple.700"
                   display="flex"
                   alignItems="center"
                   justifyContent="space-between"
                 >
                   <Box display="flex" alignItems="center">
-                    <Text fontSize="16px" mr={2}>
+                    <Text fontSize={isMobile ? "14px" : "16px"} mr={2}>
                       🔒
                     </Text>
                     <Text fontWeight="medium">
-                      View-once mode enabled - message will disappear after
-                      viewing
+                      {isMobile
+                        ? "View-once mode enabled"
+                        : "View-once mode enabled - message will disappear after viewing"}
                     </Text>
                   </Box>
                   <Button
@@ -794,7 +840,11 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
                 </Box>
               )}
 
-              <Box display="flex" alignItems="flex-end" gap="2">
+              <Box
+                display="flex"
+                alignItems="flex-end"
+                gap={isMobile ? "1" : "2"}
+              >
                 {/* Emoji Picker */}
                 <Popover
                   isOpen={showEmojiPicker}
@@ -804,20 +854,22 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
                   <PopoverTrigger>
                     <IconButton
                       aria-label="Select emoji"
-                      icon={<Text fontSize="20px">😊</Text>}
+                      icon={
+                        <Text fontSize={isMobile ? "16px" : "20px"}>😊</Text>
+                      }
                       onClick={() => setShowEmojiPicker(!showEmojiPicker)}
                       variant="ghost"
                       colorScheme="gray"
                       borderRadius="full"
                       _hover={{ bg: "gray.100" }}
-                      size="md"
+                      size={buttonSize}
                     />
                   </PopoverTrigger>
-                  <PopoverContent w="350px" p={0}>
+                  <PopoverContent w={isMobile ? "300px" : "350px"} p={0}>
                     <EmojiPicker
                       onEmojiClick={handleEmojiClick}
                       width="100%"
-                      height="350px"
+                      height={isMobile ? "300px" : "350px"}
                       searchDisabled={false}
                       skinTonesDisabled={false}
                       previewConfig={{
@@ -843,15 +895,18 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
                       colorScheme="gray"
                       borderRadius="full"
                       _hover={{ bg: "gray.100" }}
-                      size="md"
+                      size={buttonSize}
                     />
                   </PopoverTrigger>
-                  <PopoverContent w="200px" p={2}>
+                  <PopoverContent w={isMobile ? "160px" : "200px"} p={2}>
                     <VStack spacing={1}>
                       <Button
                         leftIcon={<FiImage />}
                         variant="ghost"
                         justifyContent="flex-start"
+                        w="100%"
+                        size={isMobile ? "sm" : "md"}
+                        fontSize={isMobile ? "sm" : "md"}
                         onClick={() => {
                           fileInputRef.current.accept = "image/*";
                           fileInputRef.current.click();
@@ -865,6 +920,8 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
                         variant="ghost"
                         justifyContent="flex-start"
                         w="100%"
+                        size={isMobile ? "sm" : "md"}
+                        fontSize={isMobile ? "sm" : "md"}
                         onClick={() => {
                           fileInputRef.current.accept = "video/*";
                           fileInputRef.current.click();
@@ -878,6 +935,8 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
                         variant="ghost"
                         justifyContent="flex-start"
                         w="100%"
+                        size={isMobile ? "sm" : "md"}
+                        fontSize={isMobile ? "sm" : "md"}
                         onClick={() => {
                           fileInputRef.current.accept = "image/*,video/*";
                           fileInputRef.current.click();
@@ -917,7 +976,7 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
                     _hover={{
                       bg: isViewOnceEnabled ? "purple.600" : "gray.100",
                     }}
-                    size="md"
+                    size={buttonSize}
                     bg={isViewOnceEnabled ? "purple.500" : "transparent"}
                     color={isViewOnceEnabled ? "white" : "gray.500"}
                     boxShadow={isViewOnceEnabled ? "md" : "none"}
@@ -969,11 +1028,11 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
                   }}
                   borderRadius="lg"
                   fontFamily="'Poppins', sans-serif"
-                  fontSize="16px"
+                  fontSize={inputFontSize}
                   color="#34495E"
-                  p={4}
-                  minH="50px"
-                  maxH="120px"
+                  p={isMobile ? 3 : 4}
+                  minH={isMobile ? "40px" : "50px"}
+                  maxH={isMobile ? "100px" : "120px"}
                   resize="none"
                   rows={1}
                   overflow="hidden"
@@ -1000,19 +1059,27 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
                       : "blue.600",
                   }}
                   boxShadow="base"
-                  size="md"
+                  size={buttonSize}
                 />
               </Box>
             </FormControl>
           </Box>
 
           {/* Media Preview Modal */}
-          <Modal isOpen={isOpen} onClose={closeMediaPreview} size="xl">
+          <Modal
+            isOpen={isOpen}
+            onClose={closeMediaPreview}
+            size={isMobile ? "full" : "xl"}
+          >
             <ModalOverlay bg="blackAlpha.800" />
-            <ModalContent maxW="600px" bg="white">
+            <ModalContent
+              maxW={isMobile ? "100%" : "600px"}
+              bg="white"
+              m={isMobile ? 0 : "auto"}
+            >
               <ModalHeader>
                 <Flex alignItems="center" justifyContent="space-between">
-                  <Text>
+                  <Text fontSize={isMobile ? "lg" : "xl"}>
                     Send {mediaType === "image" ? "Photo" : "Video"}
                     {isViewOnceEnabled && (
                       <Badge ml={2} colorScheme="purple">
@@ -1042,7 +1109,7 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
                   {/* Media Preview */}
                   <Box
                     w="100%"
-                    maxH="400px"
+                    maxH={isMobile ? "300px" : "400px"}
                     bg="gray.50"
                     borderRadius="lg"
                     overflow="hidden"
@@ -1054,11 +1121,14 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
                         alt="Preview"
                         w="100%"
                         h="auto"
-                        maxH="400px"
+                        maxH={isMobile ? "300px" : "400px"}
                         objectFit="contain"
                       />
                     ) : (
-                      <AspectRatio ratio={16 / 9} maxH="400px">
+                      <AspectRatio
+                        ratio={16 / 9}
+                        maxH={isMobile ? "300px" : "400px"}
+                      >
                         <video
                           src={mediaPreview}
                           controls
@@ -1093,7 +1163,7 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
                       variant={isViewOnceEnabled ? "solid" : "outline"}
                       colorScheme="purple"
                       onClick={toggleViewOnceMode}
-                      size="sm"
+                      size={isMobile ? "sm" : "md"}
                     >
                       {isViewOnceEnabled
                         ? "View Once Enabled"
@@ -1107,6 +1177,7 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
                       variant="ghost"
                       onClick={closeMediaPreview}
                       disabled={isUploading}
+                      size={isMobile ? "sm" : "md"}
                     >
                       Cancel
                     </Button>
@@ -1116,6 +1187,7 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
                       isLoading={isUploading}
                       loadingText="Sending..."
                       leftIcon={<ArrowBackIcon transform="rotate(90deg)" />}
+                      size={isMobile ? "sm" : "md"}
                     >
                       Send
                     </Button>
@@ -1135,14 +1207,16 @@ const SingleChat = ({ fetchAgain, setFetchAgain }) => {
           p={6}
         >
           <Text
-            fontSize="3xl"
+            fontSize={isMobile ? "xl" : "3xl"}
             pb={3}
             fontFamily="'Poppins','sans-serif'"
             fontWeight="medium"
             color="hsl(224, 58%, 25%)"
             textAlign="center"
           >
-            Click on a user to start chatting..
+            {isMobile
+              ? "Select a chat to start messaging"
+              : "Click on a user to start chatting.."}
           </Text>
         </Box>
       )}
